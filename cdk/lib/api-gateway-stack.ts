@@ -51,6 +51,7 @@ export class ApiGatewayStack extends cdk.Stack {
     id: string,
     db: DatabaseStack,
     vpcStack: VpcStack,
+    ecsSocketStack: any,
     props?: cdk.StackProps
   ) {
     super(scope, id, props);
@@ -362,11 +363,15 @@ export class ApiGatewayStack extends cdk.Stack {
     );
 
     // Create Cognito user pool groups
-    const studentGroup = new cognito.CfnUserPoolGroup(this, `${id}-StudentGroup`, {
-      groupName: "student",
-      userPoolId: this.userPool.userPoolId,
-      roleArn: studentRole.roleArn,
-    });
+    const studentGroup = new cognito.CfnUserPoolGroup(
+      this,
+      `${id}-StudentGroup`,
+      {
+        groupName: "student",
+        userPoolId: this.userPool.userPoolId,
+        roleArn: studentRole.roleArn,
+      }
+    );
 
     const instructorGroup = new cognito.CfnUserPoolGroup(
       this,
@@ -395,25 +400,33 @@ export class ApiGatewayStack extends cdk.Stack {
     );
 
     // Create unauthenticated role with no permissions
-    const unauthenticatedRole = new iam.Role(this, `${id}-UnauthenticatedRole`, {
-      assumedBy: new iam.FederatedPrincipal(
-        "cognito-identity.amazonaws.com",
-        {
-          StringEquals: {
-            "cognito-identity.amazonaws.com:aud": this.identityPool.ref,
+    const unauthenticatedRole = new iam.Role(
+      this,
+      `${id}-UnauthenticatedRole`,
+      {
+        assumedBy: new iam.FederatedPrincipal(
+          "cognito-identity.amazonaws.com",
+          {
+            StringEquals: {
+              "cognito-identity.amazonaws.com:aud": this.identityPool.ref,
+            },
+            "ForAnyValue:StringLike": {
+              "cognito-identity.amazonaws.com:amr": "unauthenticated",
+            },
           },
-          "ForAnyValue:StringLike": {
-            "cognito-identity.amazonaws.com:amr": "unauthenticated",
-          },
-        },
-        "sts:AssumeRoleWithWebIdentity"
-      ),
-    });
+          "sts:AssumeRoleWithWebIdentity"
+        ),
+      }
+    );
 
-    const lambdaRole = new iam.Role(this, `${id}-postgresLambdaRole-${this.region}`, {
-      roleName: `${id}-postgresLambdaRole-${this.region}`,
-      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-    });
+    const lambdaRole = new iam.Role(
+      this,
+      `${id}-postgresLambdaRole-${this.region}`,
+      {
+        roleName: `${id}-postgresLambdaRole-${this.region}`,
+        assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      }
+    );
 
     // Grant access to Secret Manager
     lambdaRole.addToPolicy(
@@ -492,22 +505,26 @@ export class ApiGatewayStack extends cdk.Stack {
       },
     });
 
-    const lambdaStudentFunction = new lambda.Function(this, `${id}-studentFunction`, {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset("lambda/lib"),
-      handler: "studentFunction.handler",
-      timeout: Duration.seconds(300),
-      vpc: vpcStack.vpc,
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-        USER_POOL: this.userPool.userPoolId,
-      },
-      functionName: `${id}-studentFunction`,
-      memorySize: 512,
-      layers: [postgres],
-      role: lambdaRole,
-    });
+    const lambdaStudentFunction = new lambda.Function(
+      this,
+      `${id}-studentFunction`,
+      {
+        runtime: lambda.Runtime.NODEJS_20_X,
+        code: lambda.Code.fromAsset("lambda/lib"),
+        handler: "studentFunction.handler",
+        timeout: Duration.seconds(300),
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          USER_POOL: this.userPool.userPoolId,
+        },
+        functionName: `${id}-studentFunction`,
+        memorySize: 512,
+        layers: [postgres],
+        role: lambdaRole,
+      }
+    );
 
     // Add the permission to the Lambda function's policy to allow API Gateway access
     lambdaStudentFunction.addPermission("AllowApiGatewayInvoke", {
@@ -552,21 +569,25 @@ export class ApiGatewayStack extends cdk.Stack {
       .defaultChild as lambda.CfnFunction;
     cfnLambda_Instructor.overrideLogicalId("instructorFunction");
 
-    const lambdaAdminFunction = new lambda.Function(this, `${id}-adminFunction`, {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset("lambda/adminFunction"),
-      handler: "adminFunction.handler",
-      timeout: Duration.seconds(300),
-      vpc: vpcStack.vpc,
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
-      },
-      functionName: `${id}-adminFunction`,
-      memorySize: 512,
-      layers: [postgres],
-      role: lambdaRole,
-    });
+    const lambdaAdminFunction = new lambda.Function(
+      this,
+      `${id}-adminFunction`,
+      {
+        runtime: lambda.Runtime.NODEJS_20_X,
+        code: lambda.Code.fromAsset("lambda/adminFunction"),
+        handler: "adminFunction.handler",
+        timeout: Duration.seconds(300),
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
+        },
+        functionName: `${id}-adminFunction`,
+        memorySize: 512,
+        layers: [postgres],
+        role: lambdaRole,
+      }
+    );
 
     // Add the permission to the Lambda function's policy to allow API Gateway access
     lambdaAdminFunction.addPermission("AllowApiGatewayInvoke", {
@@ -579,10 +600,14 @@ export class ApiGatewayStack extends cdk.Stack {
       .defaultChild as lambda.CfnFunction;
     cfnLambda_Admin.overrideLogicalId("adminFunction");
 
-    const coglambdaRole = new iam.Role(this, `${id}-cognitoLambdaRole-${this.region}`, {
-      roleName: `${id}-cognitoLambdaRole-${this.region}`,
-      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-    });
+    const coglambdaRole = new iam.Role(
+      this,
+      `${id}-cognitoLambdaRole-${this.region}`,
+      {
+        roleName: `${id}-cognitoLambdaRole-${this.region}`,
+        assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      }
+    );
 
     // Grant access to Secret Manager
     coglambdaRole.addToPolicy(
@@ -685,21 +710,25 @@ export class ApiGatewayStack extends cdk.Stack {
       })
     );
 
-    const AutoSignupLambda = new lambda.Function(this, `${id}-addStudentOnSignUp`, {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset("lambda/lib"),
-      handler: "addStudentOnSignUp.handler",
-      timeout: Duration.seconds(300),
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
-      },
-      vpc: vpcStack.vpc,
-      functionName: `${id}-addStudentOnSignUp`,
-      memorySize: 128,
-      layers: [postgres],
-      role: coglambdaRole,
-    });
+    const AutoSignupLambda = new lambda.Function(
+      this,
+      `${id}-addStudentOnSignUp`,
+      {
+        runtime: lambda.Runtime.NODEJS_20_X,
+        code: lambda.Code.fromAsset("lambda/lib"),
+        handler: "addStudentOnSignUp.handler",
+        timeout: Duration.seconds(300),
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
+        },
+        vpc: vpcStack.vpc,
+        functionName: `${id}-addStudentOnSignUp`,
+        memorySize: 128,
+        layers: [postgres],
+        role: coglambdaRole,
+      }
+    );
 
     const adjustUserRoles = new lambda.Function(this, `${id}-adjustUserRoles`, {
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -859,23 +888,35 @@ export class ApiGatewayStack extends cdk.Stack {
     );
 
     // Create parameters for Bedrock LLM ID, Embedding Model ID, and Table Name in Parameter Store
-    const bedrockLLMParameter = new ssm.StringParameter(this, "BedrockLLMParameter", {
-      parameterName: `/${id}/VCI/BedrockLLMId`,
-      description: "Parameter containing the Bedrock LLM ID",
-      stringValue: "meta.llama3-70b-instruct-v1:0",
-    });
+    const bedrockLLMParameter = new ssm.StringParameter(
+      this,
+      "BedrockLLMParameter",
+      {
+        parameterName: `/${id}/VCI/BedrockLLMId`,
+        description: "Parameter containing the Bedrock LLM ID",
+        stringValue: "meta.llama3-70b-instruct-v1:0",
+      }
+    );
 
-    const embeddingModelParameter = new ssm.StringParameter(this, "EmbeddingModelParameter", {
-      parameterName: `/${id}/VCI/EmbeddingModelId`,
-      description: "Parameter containing the Embedding Model ID",
-      stringValue: "amazon.titan-embed-text-v2:0",
-    });
+    const embeddingModelParameter = new ssm.StringParameter(
+      this,
+      "EmbeddingModelParameter",
+      {
+        parameterName: `/${id}/VCI/EmbeddingModelId`,
+        description: "Parameter containing the Embedding Model ID",
+        stringValue: "amazon.titan-embed-text-v2:0",
+      }
+    );
 
-    const tableNameParameter = new ssm.StringParameter(this, "TableNameParameter", {
-      parameterName: `/${id}/VCI/TableName`,
-      description: "Parameter containing the DynamoDB table name",
-      stringValue: "DynamoDB-Conversation-Table",
-    });
+    const tableNameParameter = new ssm.StringParameter(
+      this,
+      "TableNameParameter",
+      {
+        parameterName: `/${id}/VCI/TableName`,
+        description: "Parameter containing the DynamoDB table name",
+        stringValue: "DynamoDB-Conversation-Table",
+      }
+    );
 
     /**
      *
@@ -975,25 +1016,29 @@ export class ApiGatewayStack extends cdk.Stack {
     );
 
     // Create S3 Bucket to handle documents for each simulation group
-    const dataIngestionBucket = new s3.Bucket(this, `${id}-DataIngestionBucket`, {
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      cors: [
-        {
-          allowedHeaders: ["*"],
-          allowedMethods: [
-            s3.HttpMethods.GET,
-            s3.HttpMethods.PUT,
-            s3.HttpMethods.HEAD,
-            s3.HttpMethods.POST,
-            s3.HttpMethods.DELETE,
-          ],
-          allowedOrigins: ["*"],
-        },
-      ],
-      // When deleting the stack, need to empty the Bucket and delete it manually
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      enforceSSL: true,
-    });
+    const dataIngestionBucket = new s3.Bucket(
+      this,
+      `${id}-DataIngestionBucket`,
+      {
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        cors: [
+          {
+            allowedHeaders: ["*"],
+            allowedMethods: [
+              s3.HttpMethods.GET,
+              s3.HttpMethods.PUT,
+              s3.HttpMethods.HEAD,
+              s3.HttpMethods.POST,
+              s3.HttpMethods.DELETE,
+            ],
+            allowedOrigins: ["*"],
+          },
+        ],
+        // When deleting the stack, need to empty the Bucket and delete it manually
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
+        enforceSSL: true,
+      }
+    );
 
     // Create the Lambda function for generating presigned URLs
     const generatePreSignedURL = new lambda.Function(
@@ -1092,9 +1137,14 @@ export class ApiGatewayStack extends cdk.Stack {
     dataIngestLambdaDockerFunc.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
-        actions: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:HeadObject"],
+        actions: [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:HeadObject",
+        ],
         resources: [
-          `arn:aws:s3:::${embeddingStorageBucket.bucketName}/*`,  // Grant access to all objects within this bucket
+          `arn:aws:s3:::${embeddingStorageBucket.bucketName}/*`, // Grant access to all objects within this bucket
         ],
       })
     );
@@ -1144,58 +1194,75 @@ export class ApiGatewayStack extends cdk.Stack {
     });
 
     // Define a CloudWatch Log Metric Filter to detect timeouts
-    const timeoutMetricFilter = new logs.MetricFilter(this, `${id}-LambdaTimeoutMetricFilter`, {
-      logGroup: logGroup,
-      metricNamespace: "LambdaTimeouts",
-      metricName: "DataIngestLambdaTimeouts",
-      filterPattern: logs.FilterPattern.literal("Task timed out after"),
-      metricValue: "1",
-    });
+    const timeoutMetricFilter = new logs.MetricFilter(
+      this,
+      `${id}-LambdaTimeoutMetricFilter`,
+      {
+        logGroup: logGroup,
+        metricNamespace: "LambdaTimeouts",
+        metricName: "DataIngestLambdaTimeouts",
+        filterPattern: logs.FilterPattern.literal("Task timed out after"),
+        metricValue: "1",
+      }
+    );
 
     // Define the CloudWatch Alarm for Lambda timeout
-    const timeoutAlarm = new cloudwatch.Alarm(this, `${id}-DataIngestLambdaTimeoutAlarm`, {
-      metric: timeoutMetricFilter.metric({ 
-        statistic: 'Sum',
-        period: cdk.Duration.seconds(10)
-      }),
-      alarmDescription: `Alarm when ${dataIngestLambdaDockerFunc.functionName} Lambda function times out`,
-      threshold: 1,
-      evaluationPeriods: 1,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING // Avoid false positives
-    });
+    const timeoutAlarm = new cloudwatch.Alarm(
+      this,
+      `${id}-DataIngestLambdaTimeoutAlarm`,
+      {
+        metric: timeoutMetricFilter.metric({
+          statistic: "Sum",
+          period: cdk.Duration.seconds(10),
+        }),
+        alarmDescription: `Alarm when ${dataIngestLambdaDockerFunc.functionName} Lambda function times out`,
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING, // Avoid false positives
+      }
+    );
 
     // This rule will help invoke timeout Lambda function when the alarm is triggered
-    const timeoutRule = new events.Rule(this, `${id}-DataIngestLambdaTimeoutRule`, {
-      eventPattern: {
-        source: ["aws.cloudwatch"],
-        detailType: ["CloudWatch Alarm State Change"],
-        detail: {
-          state: { value: ["ALARM", "OK"] }
+    const timeoutRule = new events.Rule(
+      this,
+      `${id}-DataIngestLambdaTimeoutRule`,
+      {
+        eventPattern: {
+          source: ["aws.cloudwatch"],
+          detailType: ["CloudWatch Alarm State Change"],
+          detail: {
+            state: { value: ["ALARM", "OK"] },
+          },
         },
       }
-    });
+    );
 
     // This Lambda function checks set the ingestion_status of LLM files to "error" if they are still "processing" when dataIngestLambdaDockerFunc times out
-    const timeoutHandlerLambda = new lambda.Function(this, `${id}-TimeoutHandlerLambda`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("lambda/timeoutHandler"),
-      handler: "timeoutHandler.lambda_handler",
-      timeout: Duration.seconds(300),
-      memorySize: 128,
-      vpc: vpcStack.vpc,
-      environment: {        
-        SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-      },
-      functionName: `${id}-TimeoutHandlerLambda`,
-      layers: [psycopgLayer, powertoolsLayer],
-      role: lambdaRole,
-    });
-  
+    const timeoutHandlerLambda = new lambda.Function(
+      this,
+      `${id}-TimeoutHandlerLambda`,
+      {
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("lambda/timeoutHandler"),
+        handler: "timeoutHandler.lambda_handler",
+        timeout: Duration.seconds(300),
+        memorySize: 128,
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+        },
+        functionName: `${id}-TimeoutHandlerLambda`,
+        layers: [psycopgLayer, powertoolsLayer],
+        role: lambdaRole,
+      }
+    );
+
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnTimeoutHandlerLambda = timeoutHandlerLambda.node
-        .defaultChild as lambda.CfnFunction;
+      .defaultChild as lambda.CfnFunction;
     cfnTimeoutHandlerLambda.overrideLogicalId("TimeoutHandlerLambda");
 
     // Ensure EventBridge can invoke the timeout Lambda
@@ -1212,22 +1279,26 @@ export class ApiGatewayStack extends cdk.Stack {
      *
      * Create Lambda function that will return all file names for a specified simulation group and patient
      */
-    const getFilesFunction = new lambda.Function(this, `${id}-GetFilesFunction`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("lambda/getFilesFunction"),
-      handler: "getFilesFunction.lambda_handler",
-      timeout: Duration.seconds(300),
-      memorySize: 128,
-      vpc: vpcStack.vpc,
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-        BUCKET: dataIngestionBucket.bucketName,
-        REGION: this.region,
-      },
-      functionName: `${id}-GetFilesFunction`,
-      layers: [psycopgLayer, powertoolsLayer],
-    });
+    const getFilesFunction = new lambda.Function(
+      this,
+      `${id}-GetFilesFunction`,
+      {
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("lambda/getFilesFunction"),
+        handler: "getFilesFunction.lambda_handler",
+        timeout: Duration.seconds(300),
+        memorySize: 128,
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          BUCKET: dataIngestionBucket.bucketName,
+          REGION: this.region,
+        },
+        functionName: `${id}-GetFilesFunction`,
+        layers: [psycopgLayer, powertoolsLayer],
+      }
+    );
 
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnGetFilesFunction = getFilesFunction.node
@@ -1262,22 +1333,26 @@ export class ApiGatewayStack extends cdk.Stack {
      *
      * Create Lambda function that will return all file names for a specified simulation group and patient for a student
      */
-    const getFilesFunctionStudent = new lambda.Function(this, `${id}-GetFilesFunctionStudent`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("lambda/getFilesFunction"),
-      handler: "getFilesFunction.lambda_handler",
-      timeout: Duration.seconds(300),
-      memorySize: 128,
-      vpc: vpcStack.vpc,
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-        BUCKET: dataIngestionBucket.bucketName,
-        REGION: this.region,
-      },
-      functionName: `${id}-GetFilesFunctionStudent`,
-      layers: [psycopgLayer, powertoolsLayer],
-    });
+    const getFilesFunctionStudent = new lambda.Function(
+      this,
+      `${id}-GetFilesFunctionStudent`,
+      {
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("lambda/getFilesFunction"),
+        handler: "getFilesFunction.lambda_handler",
+        timeout: Duration.seconds(300),
+        memorySize: 128,
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          BUCKET: dataIngestionBucket.bucketName,
+          REGION: this.region,
+        },
+        functionName: `${id}-GetFilesFunctionStudent`,
+        layers: [psycopgLayer, powertoolsLayer],
+      }
+    );
 
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnGetFilesFunctionStudent = getFilesFunctionStudent.node
@@ -1312,27 +1387,31 @@ export class ApiGatewayStack extends cdk.Stack {
      *
      * Create Lambda function that will return profile pictures of all patients within a simulation group
      */
-    const getProfilePictures = new lambda.Function(this, `${id}-GetProfilePictures`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("lambda/getProfilePictures"),
-      handler: "getProfilePictures.lambda_handler",
-      timeout: Duration.seconds(300),
-      memorySize: 128,
-      vpc: vpcStack.vpc,
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-        BUCKET: dataIngestionBucket.bucketName,
-        REGION: this.region,
-      },
-      functionName: `${id}-GetProfilePictures`,
-      layers: [psycopgLayer, powertoolsLayer],
-    });
+    const getProfilePictures = new lambda.Function(
+      this,
+      `${id}-GetProfilePictures`,
+      {
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("lambda/getProfilePictures"),
+        handler: "getProfilePictures.lambda_handler",
+        timeout: Duration.seconds(300),
+        memorySize: 128,
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          BUCKET: dataIngestionBucket.bucketName,
+          REGION: this.region,
+        },
+        functionName: `${id}-GetProfilePictures`,
+        layers: [psycopgLayer, powertoolsLayer],
+      }
+    );
 
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnGetProfilePictures = getProfilePictures.node
       .defaultChild as lambda.CfnFunction;
-      cfnGetProfilePictures.overrideLogicalId("GetProfilePictures");
+    cfnGetProfilePictures.overrideLogicalId("GetProfilePictures");
 
     // Grant the Lambda function read-only permissions to the S3 bucket
     dataIngestionBucket.grantRead(getProfilePictures);
@@ -1362,27 +1441,31 @@ export class ApiGatewayStack extends cdk.Stack {
      *
      * Create Lambda function that will return profile pictures of all patients within a simulation group for students
      */
-    const getProfilePicturesStudent = new lambda.Function(this, `${id}-GetProfilePicturesStudent`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("lambda/getProfilePictures"),
-      handler: "getProfilePictures.lambda_handler",
-      timeout: Duration.seconds(300),
-      memorySize: 128,
-      vpc: vpcStack.vpc,
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-        BUCKET: dataIngestionBucket.bucketName,
-        REGION: this.region,
-      },
-      functionName: `${id}-GetProfilePicturesStudent`,
-      layers: [psycopgLayer, powertoolsLayer],
-    });
+    const getProfilePicturesStudent = new lambda.Function(
+      this,
+      `${id}-GetProfilePicturesStudent`,
+      {
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("lambda/getProfilePictures"),
+        handler: "getProfilePictures.lambda_handler",
+        timeout: Duration.seconds(300),
+        memorySize: 128,
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          BUCKET: dataIngestionBucket.bucketName,
+          REGION: this.region,
+        },
+        functionName: `${id}-GetProfilePicturesStudent`,
+        layers: [psycopgLayer, powertoolsLayer],
+      }
+    );
 
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnGetProfilePicturesStudent = getProfilePicturesStudent.node
       .defaultChild as lambda.CfnFunction;
-      cfnGetProfilePicturesStudent.overrideLogicalId("GetProfilePicturesStudent");
+    cfnGetProfilePicturesStudent.overrideLogicalId("GetProfilePicturesStudent");
 
     // Grant the Lambda function read-only permissions to the S3 bucket
     dataIngestionBucket.grantRead(getProfilePicturesStudent);
@@ -1461,19 +1544,23 @@ export class ApiGatewayStack extends cdk.Stack {
      *
      * Create Lambda function to delete an entire patient directory
      */
-    const deletePatientFunction = new lambda.Function(this, `${id}-DeletePatientFunction`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("lambda/deletePatient"),
-      handler: "deletePatient.lambda_handler",
-      timeout: Duration.seconds(300),
-      memorySize: 128,
-      environment: {
-        BUCKET: dataIngestionBucket.bucketName,
-        REGION: this.region,
-      },
-      functionName: `${id}-DeletePatientFunction`,
-      layers: [powertoolsLayer],
-    });
+    const deletePatientFunction = new lambda.Function(
+      this,
+      `${id}-DeletePatientFunction`,
+      {
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("lambda/deletePatient"),
+        handler: "deletePatient.lambda_handler",
+        timeout: Duration.seconds(300),
+        memorySize: 128,
+        environment: {
+          BUCKET: dataIngestionBucket.bucketName,
+          REGION: this.region,
+        },
+        functionName: `${id}-DeletePatientFunction`,
+        layers: [powertoolsLayer],
+      }
+    );
 
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnDeletePatientFunction = deletePatientFunction.node
@@ -1495,22 +1582,26 @@ export class ApiGatewayStack extends cdk.Stack {
      *
      * Create a Lambda function that deletes the last message in a conversation
      */
-    const deleteLastMessage = new lambda.Function(this, `${id}-DeleteLastMessage`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("lambda/deleteLastMessage"),
-      handler: "deleteLastMessage.lambda_handler",
-      timeout: Duration.seconds(300),
-      memorySize: 128,
-      vpc: vpcStack.vpc,
-      environment: {
-        SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
-        TABLE_NAME_PARAM: tableNameParameter.parameterName,
-        REGION: this.region,
-      },
-      functionName: `${id}-DeleteLastMessage`,
-      layers: [psycopgLayer, powertoolsLayer],
-    });
+    const deleteLastMessage = new lambda.Function(
+      this,
+      `${id}-DeleteLastMessage`,
+      {
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("lambda/deleteLastMessage"),
+        handler: "deleteLastMessage.lambda_handler",
+        timeout: Duration.seconds(300),
+        memorySize: 128,
+        vpc: vpcStack.vpc,
+        environment: {
+          SM_DB_CREDENTIALS: db.secretPathUser.secretName,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
+          TABLE_NAME_PARAM: tableNameParameter.parameterName,
+          REGION: this.region,
+        },
+        functionName: `${id}-DeleteLastMessage`,
+        layers: [psycopgLayer, powertoolsLayer],
+      }
+    );
 
     // Override the Logical ID of the Lambda Function to get ARN in OpenAPI
     const cfnDeleteLastMessage = deleteLastMessage.node
@@ -1552,9 +1643,7 @@ export class ApiGatewayStack extends cdk.Stack {
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ["ssm:GetParameter"],
-        resources: [
-          tableNameParameter.parameterArn,
-        ],
+        resources: [tableNameParameter.parameterArn],
       })
     );
 
@@ -1613,6 +1702,5 @@ export class ApiGatewayStack extends cdk.Stack {
         webAclArn: waf.attrArn,
       }
     );
-
   }
 }
