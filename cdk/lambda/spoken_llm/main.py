@@ -297,89 +297,43 @@ class NovaSonic:
         except Exception as e:
             print(f"Error processing responses: {e}")
     
-    async def play_audio(self):
-        """Play audio responses."""
-        p = pyaudio.PyAudio()
-        stream = p.open(
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=OUTPUT_SAMPLE_RATE,
-            output=True
-        )
-        
+    async def stream_audio_to_frontend(self):
+        """Stream audio responses to frontend via WebSocket."""
         try:
             while self.is_active:
                 audio_data = await self.audio_queue.get()
-                stream.write(audio_data)
+                if self.socket_client:
+                    await self.socket_client.emit_audio_chunk(audio_data)
         except Exception as e:
-            print(f"Error playing audio: {e}")
-        finally:
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-            print("Audio playing stopped.")
+            print(f"Error streaming audio: {e}")
 
-    async def capture_audio(self):
-        """Capture audio from microphone and send to Nova Sonic."""
-        p = pyaudio.PyAudio()
-        stream = p.open(
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=INPUT_SAMPLE_RATE,
-            input=True,
-            frames_per_buffer=CHUNK_SIZE
-        )
-        
-        print("Starting audio capture. Speak into your microphone...")
-        print("Press Enter to stop...")
-        
-        await self.start_audio_input()
-        
-        try:
-            while self.is_active:
-                audio_data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
-                await self.send_audio_chunk(audio_data)
-                await asyncio.sleep(0.01)
-        except Exception as e:
-            print(f"Error capturing audio: {e}")
-        finally:
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-            print("Audio capture stopped.")
-            await self.end_audio_input()
+    async def receive_audio_from_frontend(self, audio_data):
+        """Receive audio data from frontend and send to Nova Sonic."""
+        if self.is_active:
+            await self.send_audio_chunk(audio_data)
 
-async def main():
-    # Create Nova Sonic client
-    nova_client = NovaSonic()
+async def main(socket_url=None):
+    # Create Nova Sonic client with WebSocket
+    nova_client = NovaSonic(socket_url=socket_url)
 
     # Start session
     await nova_client.start_session()
 
-    # Start audio playback task
-    playback_task = asyncio.create_task(nova_client.play_audio())
+    # Start audio streaming to frontend
+    stream_task = asyncio.create_task(nova_client.stream_audio_to_frontend())
 
-    # Start audio capture task
-    capture_task = asyncio.create_task(nova_client.capture_audio())
-
-    # Wait for user to press Enter to stop
-    await asyncio.get_event_loop().run_in_executor(None, input)
+    # Keep session alive for a reasonable time
+    await asyncio.sleep(300)  # 5 minutes
 
     # End session
     nova_client.is_active = False
 
-    # First cancel the tasks
-    tasks = []
-    if not playback_task.done():
-        tasks.append(playback_task)
-    if not capture_task.done():
-        tasks.append(capture_task)
-    for task in tasks:
-        task.cancel()
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    # Cancel tasks
+    if not stream_task.done():
+        stream_task.cancel()
+        await asyncio.gather(stream_task, return_exceptions=True)
 
-    # cancel the response task
+    # Cancel response task
     if nova_client.response and not nova_client.response.done():
         nova_client.response.cancel()
 

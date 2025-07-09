@@ -30,16 +30,12 @@ async def run_nova_session(socket_url):
     
     await nova_client.start_session()
     
-    # Start audio playback and capture tasks
-    playback_task = asyncio.create_task(nova_client.play_audio())
-    capture_task = asyncio.create_task(nova_client.capture_audio())
+    # Start audio streaming to frontend
+    stream_task = asyncio.create_task(nova_client.stream_audio_to_frontend())
     
-    # Wait for tasks to complete or timeout
+    # Keep session alive
     try:
-        await asyncio.wait_for(
-            asyncio.gather(playback_task, capture_task, return_exceptions=True),
-            timeout=300  # 5 minutes
-        )
+        await asyncio.wait_for(stream_task, timeout=300)  # 5 minutes
     except asyncio.TimeoutError:
         pass
     finally:

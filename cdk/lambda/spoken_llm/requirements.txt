@@ -1,3 +1,2 @@
 python-socketio[asyncio_client]
-pyaudio
 aws-sdk-bedrock-runtime
