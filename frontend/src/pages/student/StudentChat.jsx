@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import AIMessage from "../../components/AIMessage";
 import Session from "../../components/Session";
 import StudentMessage from "../../components/StudentMessage";
+import VoiceConversation from "../../components/VoiceConversation";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { useNavigate } from "react-router-dom";
 import { fetchUserAttributes } from "aws-amplify/auth";
@@ -25,6 +26,8 @@ import {
 import DescriptionIcon from "@mui/icons-material/Description";
 import InfoIcon from "@mui/icons-material/Info";
 import KeyIcon from "@mui/icons-material/Key";
+import MicIcon from "@mui/icons-material/Mic";
+import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
 
 // Importing l-mirage animation
 import { mirage } from "ldrs";
@@ -77,9 +80,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
 
   const [profilePicture, setProfilePicture] = useState({});
-  const [isRecording, setIsRecording] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState(null);
-  const [novaTextInput, setNovaTextInput] = useState('');
 
   const navigate = useNavigate();
 
@@ -196,21 +196,21 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const socket = io(import.meta.env.VITE_SOCKET_URL);
 
   // Debug WebSocket connection
-  socket.on('connect', () => {
-    console.log('✅ WebSocket connected:', socket.id);
+  socket.on("connect", () => {
+    console.log("✅ WebSocket connected:", socket.id);
   });
 
-  socket.on('disconnect', () => {
-    console.log('❌ WebSocket disconnected');
+  socket.on("disconnect", () => {
+    console.log("❌ WebSocket disconnected");
   });
 
-  socket.on('connect_error', (error) => {
-    console.error('🔥 WebSocket connection error:', error);
+  socket.on("connect_error", (error) => {
+    console.error("🔥 WebSocket connection error:", error);
   });
 
   // Listen for Nova Sonic audio
   socket.on("audio-chunk", (data) => {
-    console.log('🎵 Received audio chunk:', data);
+    console.log("🎵 Received audio chunk:", data);
     const audioBytes = atob(data.data);
     playAudio(audioBytes);
   });
@@ -225,28 +225,28 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     console.log("🚀 Starting Nova Sonic session");
     console.log("Socket URL:", import.meta.env.VITE_SOCKET_URL);
     console.log("Socket connected:", socket.connected);
-    
+
     // Start microphone
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
-      
+
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           const reader = new FileReader();
           reader.onload = () => {
-            const audioData = reader.result.split(',')[1]; // Remove data:audio/webm;base64,
-            socket.emit('audio-input', { data: audioData });
+            const audioData = reader.result.split(",")[1]; // Remove data:audio/webm;base64,
+            socket.emit("audio-input", { data: audioData });
           };
           reader.readAsDataURL(event.data);
         }
       };
-      
+
       recorder.start(100); // Send audio chunks every 100ms
       setMediaRecorder(recorder);
       setIsRecording(true);
-      
-      socket.emit('start-nova-sonic');
+
+      socket.emit("start-nova-sonic");
       console.log("📡 Emitted start-nova-sonic event");
     } catch (error) {
       console.error("🎤 Microphone access denied:", error);
@@ -257,7 +257,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   function stopSpokenLLM() {
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop();
-      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      mediaRecorder.stream.getTracks().forEach((track) => track.stop());
       setIsRecording(false);
       setMediaRecorder(null);
       console.log("🛑 Stopped recording");
@@ -268,8 +268,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   function sendTextToNova() {
     if (novaTextInput.trim()) {
       console.log("📝 Sending text to Nova:", novaTextInput);
-      socket.emit('text-input', { text: novaTextInput });
-      setNovaTextInput('');
+      socket.emit("text-input", { text: novaTextInput });
+      setNovaTextInput("");
     }
   }
 
@@ -277,9 +277,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     try {
       // Create audio element and play
       const audio = new Audio(`data:audio/wav;base64,${audioBytes}`);
-      audio.play().catch(e => console.error('Audio play failed:', e));
+      audio.play().catch((e) => console.error("Audio play failed:", e));
     } catch (error) {
-      console.error('Audio processing failed:', error);
+      console.error("Audio processing failed:", error);
     }
   }
 
@@ -922,7 +922,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             }
           }}
           className={`border border-black ml-8 mr-8 mt-0 mb-0 pt-1.5 pb-1.5 hover:scale-105 transition-transform duration-300 ${
-            isRecording ? 'bg-red-500 text-white' : 'bg-transparent'
+            isRecording ? "bg-red-500 text-white" : "bg-transparent"
           }`}
         >
           <div
@@ -933,7 +933,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           >
             {sidebarWidth > 160 && (
               <div className="text-md font-roboto font-bold">
-                {isRecording ? '🎤 Stop Voice Chat' : '🎤 Start Voice Chat'}
+                {isRecording ? "🎤 Stop Voice Chat" : "🎤 Start Voice Chat"}
               </div>
             )}
           </div>
@@ -945,7 +945,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             type="text"
             value={novaTextInput}
             onChange={(e) => setNovaTextInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && sendTextToNova()}
+            onKeyDown={(e) => e.key === "Enter" && sendTextToNova()}
             placeholder="Type to Nova Sonic..."
             className="w-full p-2 text-sm border border-black bg-white"
           />
