@@ -164,15 +164,19 @@ def get_response(
             # Use markdown formatting with star ratings and icons
             empathy_feedback = f"**Empathy Coach:**\n\n"
             
-            # Add star rating based on empathy score
-            if empathy_score == "bad":
-                stars = ""
-            elif empathy_score == "ok":
-                stars = "⭐"
-            elif empathy_score == "good":
-                stars = "⭐⭐"
+            # Add star rating based on empathy score (1-5 scale)
+            if empathy_score == 1:
+                stars = "⭐ (1/5)"
+            elif empathy_score == 2:
+                stars = "⭐⭐ (2/5)"
+            elif empathy_score == 3:
+                stars = "⭐⭐⭐ (3/5)"
+            elif empathy_score == 4:
+                stars = "⭐⭐⭐⭐ (4/5)"
+            elif empathy_score == 5:
+                stars = "⭐⭐⭐⭐⭐ (5/5)"
             else:
-                stars = "⭐⭐⭐"
+                stars = "⭐⭐⭐ (3/5)"  # Default fallback
                 
             # Add icon for realism
             if realism_flag == "unrealistic":
@@ -180,8 +184,50 @@ def get_response(
             else:
                 realism_icon = "✅"
                 
-            empathy_feedback += f"Your empathy score is {empathy_score} {stars}\n"
-            empathy_feedback += f"Your response is {realism_flag} {realism_icon}\n"
+            # Display overall score and breakdown
+            overall_level = get_empathy_level_name(empathy_score)
+            empathy_feedback += f"**Overall Empathy Score:** {overall_level} {stars}\n\n"
+            
+            # Display individual category scores
+            empathy_feedback += f"**Category Breakdown:**\n"
+            
+            # Perspective-Taking
+            pt_score = empathy_evaluation.get('perspective_taking', 3)
+            pt_level = get_empathy_level_name(pt_score)
+            pt_stars = "⭐" * pt_score + f" ({pt_score}/5)"
+            empathy_feedback += f"• Perspective-Taking: {pt_level} {pt_stars}\n"
+            
+            # Emotional Resonance
+            er_score = empathy_evaluation.get('emotional_resonance', 3)
+            er_level = get_empathy_level_name(er_score)
+            er_stars = "⭐" * er_score + f" ({er_score}/5)"
+            empathy_feedback += f"• Emotional Resonance/Compassionate Care: {er_level} {er_stars}\n"
+            
+            # Acknowledgment
+            ack_score = empathy_evaluation.get('acknowledgment', 3)
+            ack_level = get_empathy_level_name(ack_score)
+            ack_stars = "⭐" * ack_score + f" ({ack_score}/5)"
+            empathy_feedback += f"• Acknowledgment of Patient's Experience: {ack_level} {ack_stars}\n"
+            
+            # Language & Communication
+            lang_score = empathy_evaluation.get('language_communication', 3)
+            lang_level = get_empathy_level_name(lang_score)
+            lang_stars = "⭐" * lang_score + f" ({lang_score}/5)"
+            empathy_feedback += f"• Language & Communication: {lang_level} {lang_stars}\n\n"
+            
+            # Add Cognitive vs Affective Empathy breakdown
+            cognitive_score = empathy_evaluation.get('cognitive_empathy', 3)
+            affective_score = empathy_evaluation.get('affective_empathy', 3)
+            cognitive_level = get_empathy_level_name(cognitive_score)
+            affective_level = get_empathy_level_name(affective_score)
+            cognitive_stars = "⭐" * cognitive_score + f" ({cognitive_score}/5)"
+            affective_stars = "⭐" * affective_score + f" ({affective_score}/5)"
+            
+            empathy_feedback += f"**Empathy Type Analysis:**\n"
+            empathy_feedback += f"• Cognitive Empathy (Understanding): {cognitive_level} {cognitive_stars}\n"
+            empathy_feedback += f"• Affective Empathy (Feeling): {affective_level} {affective_stars}\n\n"
+            
+            empathy_feedback += f"**Realism Assessment:** Your response is {realism_flag} {realism_icon}\n\n"
             
             # Add detailed feedback with reasoning
             if feedback:
@@ -381,6 +427,17 @@ def split_into_sentences(paragraph: str) -> list[str]:
     sentences = re.split(sentence_endings, paragraph)
     return sentences
 
+def get_empathy_level_name(score: int) -> str:
+    """Convert numeric empathy score to descriptive name."""
+    level_names = {
+        1: "Novice",
+        2: "Advanced Beginner", 
+        3: "Competent",
+        4: "Proficient",
+        5: "Extending"
+    }
+    return level_names.get(score, "Competent")
+
 def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
     """
     Evaluate empathy score and realism of student response.
@@ -395,32 +452,69 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     """
 
     evaluation_prompt = f"""
-    You are an expert healthcare communication coach. Evaluate this pharmacy student's response.
+    You are an expert healthcare communication coach. Evaluate this pharmacy student's response using these 4 empathy criteria:
 
     Patient Context: {patient_context}
     Student Response: {student_response}
 
-    Evaluate the response for:
-    1. **Empathy Score**: bad, ok, good, or great
-       - Great: Deep understanding, validates emotions, highly supportive
-       - Good: Acknowledges concerns, shows care and understanding
-       - Ok: Basic acknowledgment but lacks emotional connection
-       - Bad: Dismissive, insensitive, or lacks empathy
+    Evaluate each category on a 1-5 scale:
 
-    2. **Realism Assessment**: realistic or unrealistic
-       - Unrealistic: False reassurances, impossible promises, dismissing serious symptoms, medical inaccuracies
-       - Realistic: Medically appropriate, honest, evidence-based responses
+    **Perspective-Taking:**
+    • Extending (5): Exceptional understanding with profound insights into patient's viewpoint
+    • Proficient (4): Clearly demonstrates understanding of the patient's point of view with thoughtful, relevant insights
+    • Competent (3): Shows awareness of the patient's perspective with minor gaps
+    • Advanced Beginner (2): Some attempt to understand the patient's perspective, but limited depth
+    • Novice (1): Little or no effort to consider the patient's viewpoint
 
-    3. **Detailed Feedback**: Provide comprehensive, situation-specific feedback that includes:
-       - What the student did well (strengths)
-       - Specific areas for improvement based on THIS patient scenario
-       - WHY the response is realistic/unrealistic (specific to this situation)
-       - Alternative phrasing suggestion with example tailored to THIS patient's condition and concerns
-       - If unrealistic, explain the specific harm or consequences for THIS patient scenario
+    **Emotional Resonance / Compassionate Care:**
+    • Extending (5): Exceptional warmth, deeply attuned to emotional needs, creates strong therapeutic connection
+    • Proficient (4): Expresses genuine concern and sensitivity to the patient's emotional state; response is warm and respectful
+    • Competent (3): Expresses concern, though tone or wording may be slightly less empathetic
+    • Advanced Beginner (2): Shows some emotional awareness but lacks warmth or appropriateness
+    • Novice (1): Response is emotionally flat or dismissive
+
+    **Acknowledgment of Patient's Experience:**
+    • Extending (5): Deeply validates and honors patient's experience, demonstrates exceptional understanding
+    • Proficient (4): Clearly validates the patient's feelings or experience in a respectful, patient-centered way
+    • Competent (3): Attempts to validate the patient's experience with minor omissions
+    • Advanced Beginner (2): Somewhat recognizes the patient's experience but lacks clarity or depth
+    • Novice (1): Ignores or invalidates the patient's feelings or experience
+
+    **Language & Communication:**
+    • Extending (5): Masterful use of therapeutic communication, perfectly tailored language
+    • Proficient (4): Uses patient-friendly, non-judgmental, inclusive language throughout
+    • Competent (3): Mostly clear and respectful, with minor word choices that could be improved
+    • Advanced Beginner (2): Some unclear or technical language; minor judgmental tone
+    • Novice (1): Uses overly technical, dismissive, or insensitive language
+
+    **Cognitive vs Affective Empathy Analysis:**
+    
+    **Cognitive Empathy (Understanding):**
+    • Definition: Understanding another person's thoughts and perspective
+    • Focus: Explaining medical information in a way the patient understands, perspective-taking
+    • Evaluation: How well does the response demonstrate understanding of the patient's viewpoint and concerns?
+    
+    **Affective Empathy (Feeling):**
+    • Definition: Feeling and responding appropriately to another person's emotions
+    • Focus: Recognizing patient's emotions and offering appropriate emotional support
+    • Evaluation: How well does the response show emotional attunement and provide emotional comfort?
+
+    **Realism Assessment**: realistic or unrealistic
+    - Unrealistic: False reassurances, impossible promises, dismissing serious symptoms, medical inaccuracies
+    - Realistic: Medically appropriate, honest, evidence-based responses
+
+    Calculate overall empathy score as average of the 4 categories (round to nearest integer).
+    Evaluate cognitive and affective empathy separately based on the definitions above.
 
     Respond in JSON format:
     {{
-        "empathy_score": "bad|ok|good|great",
+        "empathy_score": <integer 1-5>,
+        "perspective_taking": <integer 1-5>,
+        "emotional_resonance": <integer 1-5>,
+        "acknowledgment": <integer 1-5>,
+        "language_communication": <integer 1-5>,
+        "cognitive_empathy": <integer 1-5>,
+        "affective_empathy": <integer 1-5>,
         "realism_flag": "realistic|unrealistic",
         "feedback": {{
             "strengths": ["List what the student did well"],
@@ -464,7 +558,13 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             # Fallback if Nova Pro doesn't return valid JSON
             logger.warning(f"Invalid JSON from Nova Pro: {response_text}")
             return {
-                "empathy_score": "ok",
+                "empathy_score": 3,
+                "perspective_taking": 3,
+                "emotional_resonance": 3,
+                "acknowledgment": 3,
+                "language_communication": 3,
+                "cognitive_empathy": 3,
+                "affective_empathy": 3,
                 "realism_flag": "realistic",
                 "feedback": "System error - unable to parse evaluation. Please try again."
             }
@@ -472,7 +572,13 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     except Exception as e:
         logger.error(f"Error evaluating empathy: {e}")
         return {
-            "empathy_score": "ok",
+            "empathy_score": 3,
+            "perspective_taking": 3,
+            "emotional_resonance": 3,
+            "acknowledgment": 3,
+            "language_communication": 3,
+            "cognitive_empathy": 3,
+            "affective_empathy": 3,
             "realism_flag": "realistic",
             "feedback": "System error - unable to evaluate. Please try again."
         }
