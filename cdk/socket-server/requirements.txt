@@ -1,2 +1,5 @@
 python-socketio[asyncio_client]
+boto3
 aws-sdk-bedrock-runtime
+smithy-aws-core
+smithy-core
