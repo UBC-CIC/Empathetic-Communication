@@ -122,6 +122,8 @@ const StudentDetails = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [completionStatuses, setCompletionStatuses] = useState([]);
+  const [empathySummary, setEmpathySummary] = useState(null);
+  const [empathyDialogOpen, setEmpathyDialogOpen] = useState(false);
   const sessionRefs = useRef({});
   
 
@@ -234,6 +236,14 @@ const StudentDetails = () => {
     setDialogOpen(false);
   };
 
+  const handleEmpathyDialogOpen = () => {
+    setEmpathyDialogOpen(true);
+  };
+
+  const handleEmpathyDialogClose = () => {
+    setEmpathyDialogOpen(false);
+  };
+
   const handleUnenroll = async () => {
     try {
       const session = await fetchAuthSession();
@@ -344,6 +354,41 @@ const StudentDetails = () => {
     pdf.save(`${studentId}-${session.sessionName}-notes.pdf`);
   };
 
+  const fetchEmpathySummary = async () => {
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}instructor/empathy_summary?simulation_group_id=${encodeURIComponent(
+          simulation_group_id
+        )}&student_email=${encodeURIComponent(student.email)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setEmpathySummary(data);
+        handleEmpathyDialogOpen();
+      } else {
+        toast.error("Failed to fetch empathy summary", {
+          position: "top-center",
+          autoClose: 3000,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching empathy summary:", error);
+      toast.error("Error fetching empathy summary", {
+        position: "top-center",
+        autoClose: 3000,
+      });
+    }
+  };
+
   
   
 
@@ -371,14 +416,22 @@ const StudentDetails = () => {
             <Divider sx={{ my: 2 }} />
             <Typography variant="body1">Email: {student.email}</Typography>
 
-            <Button
-              onClick={handleDialogOpen}
-              sx={{ marginBottom: 6 }}
-              variant="contained"
-              color="primary"
-            >
-              Unenroll Student
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2, marginBottom: 6 }}>
+              <Button
+                onClick={handleDialogOpen}
+                variant="contained"
+                color="primary"
+              >
+                Unenroll Student
+              </Button>
+              <Button
+                onClick={fetchEmpathySummary}
+                variant="contained"
+                color="secondary"
+              >
+                View Empathy Coach Summary
+              </Button>
+            </Box>
 
             <Dialog
               open={dialogOpen}
@@ -406,6 +459,64 @@ const StudentDetails = () => {
                   color="error"
                 >
                   Confirm
+                </Button>
+              </DialogActions>
+            </Dialog>
+
+            <Dialog
+              open={empathyDialogOpen}
+              onClose={handleEmpathyDialogClose}
+              maxWidth="md"
+              fullWidth
+            >
+              <DialogTitle>Empathy Coach Summary - {studentId}</DialogTitle>
+              <DialogContent>
+                {empathySummary ? (
+                  <Box>
+                    <Typography variant="h6" sx={{ mb: 2 }}>
+                      Overall Empathy Performance
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="body1" sx={{ mb: 1 }}>
+                        <strong>Average Empathy Score:</strong> {empathySummary.overall_score}/5 
+                        ({empathySummary.overall_level})
+                      </Typography>
+                      <Typography variant="body1" sx={{ mb: 1 }}>
+                        <strong>Total Interactions:</strong> {empathySummary.total_interactions}
+                      </Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        <strong>Interactions with Empathy Feedback:</strong> {empathySummary.empathy_interactions}
+                      </Typography>
+                    </Box>
+                    
+                    <Typography variant="h6" sx={{ mb: 2 }}>
+                      Category Breakdown
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="body2">• Perspective-Taking: {empathySummary.avg_perspective_taking}/5</Typography>
+                      <Typography variant="body2">• Emotional Resonance: {empathySummary.avg_emotional_resonance}/5</Typography>
+                      <Typography variant="body2">• Acknowledgment: {empathySummary.avg_acknowledgment}/5</Typography>
+                      <Typography variant="body2">• Language & Communication: {empathySummary.avg_language_communication}/5</Typography>
+                      <Typography variant="body2">• Cognitive Empathy: {empathySummary.avg_cognitive_empathy}/5</Typography>
+                      <Typography variant="body2">• Affective Empathy: {empathySummary.avg_affective_empathy}/5</Typography>
+                    </Box>
+
+                    <Typography variant="h6" sx={{ mb: 2 }}>
+                      Empathy Summary
+                    </Typography>
+                    <Paper sx={{ p: 2, backgroundColor: '#f5f5f5' }}>
+                      <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                        {empathySummary.summary}
+                      </Typography>
+                    </Paper>
+                  </Box>
+                ) : (
+                  <Typography>Loading empathy summary...</Typography>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={handleEmpathyDialogClose} color="primary">
+                  Close
                 </Button>
               </DialogActions>
             </Dialog>

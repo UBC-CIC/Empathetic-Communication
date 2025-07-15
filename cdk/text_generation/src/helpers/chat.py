@@ -359,6 +359,13 @@ def get_response(
     if empathy_evaluation:
         result["empathy_evaluation"] = empathy_evaluation
     
+    # Save student message with empathy evaluation to PostgreSQL
+    if query.strip() and "Greet me" not in query:
+        save_message_to_db(session_id, True, query, empathy_evaluation)
+    
+    # Save AI response to PostgreSQL
+    save_message_to_db(session_id, False, result["llm_output"], None)
+    
     return result
 
 def generate_response(conversational_rag_chain: object, query: str, session_id: str) -> str:
@@ -381,6 +388,54 @@ def generate_response(conversational_rag_chain: object, query: str, session_id: 
             "configurable": {"session_id": session_id}
         },  # constructs a key "session_id" in `store`.
     )["answer"]
+
+def save_message_to_db(session_id: str, student_sent: bool, message_content: str, empathy_evaluation: dict = None):
+    """
+    Save message with empathy evaluation to PostgreSQL messages table.
+    """
+    try:
+        import psycopg2
+        import json
+        import os
+        import boto3
+        
+        # Get database credentials
+        secrets_client = boto3.client('secretsmanager')
+        db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
+        rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
+        
+        if not db_secret_name or not rds_endpoint:
+            logger.warning("Database credentials not available for message storage")
+            return
+            
+        secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+        secret = json.loads(secret_response['SecretString'])
+        
+        # Connect to database
+        conn = psycopg2.connect(
+            host=rds_endpoint,
+            port=secret['port'],
+            database=secret['dbname'],
+            user=secret['username'],
+            password=secret['password']
+        )
+        
+        cursor = conn.cursor()
+        
+        # Insert message with empathy evaluation
+        cursor.execute(
+            'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW())',
+            (session_id, student_sent, message_content, json.dumps(empathy_evaluation) if empathy_evaluation else None)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Message saved to database with empathy evaluation: {bool(empathy_evaluation)}")
+        
+    except Exception as e:
+        logger.error(f"Error saving message to database: {e}")
 
 def get_llm_output(response: str, llm_completion: bool, empathy_feedback: str = "") -> dict:
     """

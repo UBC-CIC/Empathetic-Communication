@@ -127,6 +127,7 @@ def handler(event, context):
                 "session_id" uuid,
                 "student_sent" bool,
                 "message_content" varchar,
+                "empathy_evaluation" JSONB,
                 "time_sent" timestamp
             );
 
