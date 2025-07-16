@@ -62,6 +62,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [session, setSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [novaTextInput, setNovaTextInput] = useState("");
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [creatingSession, setCreatingSession] = useState(false);
   const [newMessage, setNewMessage] = useState(null);
@@ -210,11 +213,15 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     console.error("🔥 WebSocket connection error:", error);
   });
 
+  // Debug all socket events
+  socket.onAny((event, ...args) => {
+    console.log("📡 Socket event:", event, args);
+  });
+
   // Listen for Nova Sonic audio
   socket.on("audio-chunk", (data) => {
     console.log("🎵 Received audio chunk:", data);
-    const audioBytes = atob(data.data);
-    playAudio(audioBytes);
+    playAudio(data.data); // data.data is already base64
   });
 
   // Listen for text messages
@@ -237,19 +244,34 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         if (event.data.size > 0) {
           const reader = new FileReader();
           reader.onload = () => {
-            const audioData = reader.result.split(",")[1]; // Remove data:audio/webm;base64,
-            socket.emit("audio-input", { data: audioData });
+            const arrayBuffer = reader.result;
+            const uint8Array = new Uint8Array(arrayBuffer);
+            const base64 = btoa(String.fromCharCode.apply(null, uint8Array));
+            socket.emit("audio-input", { data: base64 });
           };
-          reader.readAsDataURL(event.data);
+          reader.readAsArrayBuffer(event.data);
         }
       };
+      
+      recorder.onstop = () => {
+        socket.emit("end-audio");
+      };
 
-      recorder.start(100); // Send audio chunks every 100ms
+      recorder.start(250); // Send audio chunks every 250ms
       setMediaRecorder(recorder);
       setIsRecording(true);
 
       socket.emit("start-nova-sonic");
       console.log("📡 Emitted start-nova-sonic event");
+      
+        // Send a dummy audio chunk to satisfy Nova's requirement
+      setTimeout(() => {
+        const dummyAudio = new ArrayBuffer(1024);
+        const uint8Array = new Uint8Array(dummyAudio);
+        const base64 = btoa(String.fromCharCode.apply(null, uint8Array));
+        socket.emit("audio-input", { data: base64 });
+        console.log("📡 Sent initial audio chunk");
+      }, 3000);
     } catch (error) {
       console.error("🎤 Microphone access denied:", error);
     }
@@ -277,9 +299,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   function playAudio(audioBytes) {
     try {
-      // Create audio element and play
       const audio = new Audio(`data:audio/wav;base64,${audioBytes}`);
-      audio.play().catch((e) => console.error("Audio play failed:", e));
+      audio.play().catch(err => console.error("Audio play failed:", err));
     } catch (error) {
       console.error("Audio processing failed:", error);
     }

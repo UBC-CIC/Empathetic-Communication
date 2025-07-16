@@ -4,10 +4,7 @@ import base64
 import json
 import uuid
 import random
-from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
-from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
-from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4AuthScheme
-from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
+import boto3
 from socket_client import SocketClient
 
 # Audio config
@@ -35,14 +32,7 @@ class NovaSonic:
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
-        config = Config(
-            endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
-            region=self.region,
-            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
-            http_auth_scheme_resolver=HTTPAuthSchemeResolver(),
-            http_auth_schemes={"aws.auth#sigv4": SigV4AuthScheme()},
-        )
-        self.client = BedrockRuntimeClient(config=config)
+        self.client = boto3.client('bedrock-runtime', region_name=self.region)
 
     async def send_event(self, event_json):
         """Send an event to the stream"""
@@ -159,6 +149,12 @@ class NovaSonic:
         '''
         await self.send_event(text_content_end)
 
+        # Start audio input immediately
+        await self.start_audio_input()
+        
+        # Send initial greeting to trigger response
+        await self.send_text_message("Hello, I'm here to help. How are you feeling today?")
+        
         # Start processing responses
         self.response = asyncio.create_task(self._process_responses())
 
@@ -288,10 +284,12 @@ class NovaSonic:
                         # Handle audio output
                         elif 'audioOutput' in json_data['event']:
                             audio_content = json_data['event']['audioOutput']['content']
-                            audio_bytes = base64.b64decode(audio_content)
-                            await self.audio_queue.put(audio_bytes)
+                            # Send base64 audio directly to frontend
+                            await self.audio_queue.put(audio_content)
                             if self.socket_client:
-                                await self.socket_client.emit_audio_chunk(audio_bytes)
+                                await self.socket_client.emit_audio_chunk(base64.b64decode(audio_content))
+                            # Also output for Node.js to capture
+                            print(json.dumps({"type": "audio", "data": audio_content}), flush=True)
         except Exception as e:
             print(f"Error processing responses: {e}")
     
@@ -300,27 +298,58 @@ class NovaSonic:
         try:
             while self.is_active:
                 audio_data = await self.audio_queue.get()
-                # Output as JSON for Node.js to capture
-                audio_b64 = base64.b64encode(audio_data).decode('utf-8')
-                print(json.dumps({"type": "audio", "data": audio_b64}))
+                # audio_data is already base64 from Nova Sonic
+                print(json.dumps({"type": "audio", "data": audio_data}), flush=True)
         except Exception as e:
-            print(json.dumps({"type": "error", "text": str(e)}))
+            print(json.dumps({"type": "error", "text": str(e)}), flush=True)
     
     async def send_text_message(self, text):
         """Send text message to Nova Sonic."""
-        # Create text content for Nova Sonic
-        text_content = f'''
+        # Start new text content
+        text_content_name = str(uuid.uuid4())
+        
+        text_content_start = f'''
+        {{
+            "event": {{
+                "contentStart": {{
+                    "promptName": "{self.prompt_name}",
+                    "contentName": "{text_content_name}",
+                    "type": "TEXT",
+                    "interactive": true,
+                    "role": "USER",
+                    "textInputConfiguration": {{
+                        "mediaType": "text/plain"
+                    }}
+                }}
+            }}
+        }}
+        '''
+        await self.send_event(text_content_start)
+        
+        text_input = f'''
         {{
             "event": {{
                 "textInput": {{
                     "promptName": "{self.prompt_name}",
-                    "contentName": "{self.content_name}",
+                    "contentName": "{text_content_name}",
                     "content": "{text}"
                 }}
             }}
         }}
         '''
-        await self.send_event(text_content)
+        await self.send_event(text_input)
+        
+        text_content_end = f'''
+        {{
+            "event": {{
+                "contentEnd": {{
+                    "promptName": "{self.prompt_name}",
+                    "contentName": "{text_content_name}"
+                }}
+            }}
+        }}
+        '''
+        await self.send_event(text_content_end)
 
     async def receive_audio_from_frontend(self, audio_data):
         """Receive audio data from frontend and send to Nova Sonic."""
@@ -344,12 +373,13 @@ async def main():
                     
                 data = json.loads(line.strip())
                 if data['type'] == 'text':
-                    # Send text to Nova Sonic
                     await nova_client.send_text_message(data['data'])
                 elif data['type'] == 'audio':
-                    # Send audio to Nova Sonic
                     audio_bytes = base64.b64decode(data['data'])
                     await nova_client.send_audio_chunk(audio_bytes)
+                elif data['type'] == 'end_audio':
+                    await nova_client.end_audio_input()
+                    await nova_client.start_audio_input()  # Restart for next input
             except Exception as e:
                 print(json.dumps({"type": "error", "text": str(e)}))
     

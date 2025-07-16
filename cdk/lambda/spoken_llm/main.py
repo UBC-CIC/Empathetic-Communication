@@ -3,22 +3,23 @@ import asyncio
 import base64
 import json
 import uuid
+import pyaudio
 import random
 from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
 from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4AuthScheme
 from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
-from socket_client import SocketClient
 
 # Audio config
 INPUT_SAMPLE_RATE = 16000
 OUTPUT_SAMPLE_RATE = 24000
 CHANNELS = 1
+FORMAT = pyaudio.paInt16
 CHUNK_SIZE = 1024
 
 
 class NovaSonic:
-    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1', socket_url=None):
+    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1'):
         self.model_id = model_id
         self.region = region
         self.client = None
@@ -30,8 +31,7 @@ class NovaSonic:
         self.audio_content_name = str(uuid.uuid4())
         self.audio_queue = asyncio.Queue()
         self.role = None
-        self.display_assistant_text = False
-        self.socket_client = SocketClient(socket_url) if socket_url else None
+        self.display_assistant_text = False  # maybe change later?
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
@@ -55,9 +55,6 @@ class NovaSonic:
         """Start a new Nova Sonic session"""
         if not self.client:
             self._init_client()
-        
-        if self.socket_client:
-            await self.socket_client.connect()
 
         # Init stream
 
@@ -278,67 +275,108 @@ class NovaSonic:
                            
                             if (self.role == "ASSISTANT" and self.display_assistant_text):
                                 print(f"Assistant: {text}")
-                                if self.socket_client:
-                                    await self.socket_client.emit_text_message(f"Assistant: {text}")
                             elif self.role == "USER":
                                 print(f"User: {text}")
-                                if self.socket_client:
-                                    await self.socket_client.emit_text_message(f"User: {text}")
                         
                         # Handle audio output
                         elif 'audioOutput' in json_data['event']:
                             audio_content = json_data['event']['audioOutput']['content']
                             audio_bytes = base64.b64decode(audio_content)
                             await self.audio_queue.put(audio_bytes)
-                            if self.socket_client:
-                                await self.socket_client.emit_audio_chunk(audio_bytes)
         except Exception as e:
             print(f"Error processing responses: {e}")
     
-    async def stream_audio_to_frontend(self):
-        """Stream audio responses to frontend via WebSocket."""
+    async def play_audio(self):
+        """Play audio responses."""
+        p = pyaudio.PyAudio()
+        stream = p.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=OUTPUT_SAMPLE_RATE,
+            output=True
+        )
+        
         try:
             while self.is_active:
                 audio_data = await self.audio_queue.get()
-                if self.socket_client:
-                    await self.socket_client.emit_audio_chunk(audio_data)
+                stream.write(audio_data)
         except Exception as e:
-            print(f"Error streaming audio: {e}")
+            print(f"Error playing audio: {e}")
+        finally:
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            print("Audio playing stopped.")
 
-    async def receive_audio_from_frontend(self, audio_data):
-        """Receive audio data from frontend and send to Nova Sonic."""
-        if self.is_active:
-            await self.send_audio_chunk(audio_data)
+    async def capture_audio(self):
+        """Capture audio from microphone and send to Nova Sonic."""
+        p = pyaudio.PyAudio()
+        stream = p.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=INPUT_SAMPLE_RATE,
+            input=True,
+            frames_per_buffer=CHUNK_SIZE
+        )
+        
+        print("Starting audio capture. Speak into your microphone...")
+        print("Press Enter to stop...")
+        
+        await self.start_audio_input()
+        
+        try:
+            while self.is_active:
+                audio_data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                await self.send_audio_chunk(audio_data)
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            print(f"Error capturing audio: {e}")
+        finally:
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            print("Audio capture stopped.")
+            await self.end_audio_input()
 
-async def main(socket_url=None):
-    # Create Nova Sonic client with WebSocket
-    nova_client = NovaSonic(socket_url=socket_url)
+async def main():
+    # Create Nova Sonic client
+    nova_client = NovaSonic()
 
     # Start session
     await nova_client.start_session()
 
-    # Start audio streaming to frontend
-    stream_task = asyncio.create_task(nova_client.stream_audio_to_frontend())
+    # Start audio playback task
+    playback_task = asyncio.create_task(nova_client.play_audio())
 
-    # Keep session alive for a reasonable time
-    await asyncio.sleep(300)  # 5 minutes
+    # Start audio capture task
+    capture_task = asyncio.create_task(nova_client.capture_audio())
+
+    # Wait for user to press Enter to stop
+    await asyncio.get_event_loop().run_in_executor(None, input)
 
     # End session
     nova_client.is_active = False
 
-    # Cancel tasks
-    if not stream_task.done():
-        stream_task.cancel()
-        await asyncio.gather(stream_task, return_exceptions=True)
+    # First cancel the tasks
+    tasks = []
+    if not playback_task.done():
+        tasks.append(playback_task)
+    if not capture_task.done():
+        tasks.append(capture_task)
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Cancel response task
+    # cancel the response task
     if nova_client.response and not nova_client.response.done():
         nova_client.response.cancel()
 
     await nova_client.end_session()
-    if nova_client.socket_client:
-        await nova_client.socket_client.disconnect()
     print("Session ended")
     
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+

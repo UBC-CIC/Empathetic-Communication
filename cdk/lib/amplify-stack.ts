@@ -2,7 +2,7 @@ import {
   App,
   BasicAuth,
   GitHubSourceCodeProvider,
-  RedirectStatus, 
+  RedirectStatus,
 } from "@aws-cdk/aws-amplify-alpha";
 import * as cdk from "aws-cdk-lib";
 import { BuildSpec } from "aws-cdk-lib/aws-codebuild";
@@ -78,11 +78,14 @@ export class AmplifyStack extends cdk.Stack {
     });
 
     amplifyApp.addCustomRule({
-      source: "</^[^.]+$|.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>",
+      source:
+        "</^[^.]+$|.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>",
       target: "/",
       status: RedirectStatus.NOT_FOUND_REWRITE,
     });
 
     amplifyApp.addBranch("main");
+
+    amplifyApp.addBranch("websocket-server");
   }
 }

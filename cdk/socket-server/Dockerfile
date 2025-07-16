@@ -17,6 +17,8 @@ RUN pip3 install --break-system-packages -r requirements.txt
 # Copy server files
 COPY server.js nova_sonic.py ./
 
+ENV AWS_DEFAULT_REGION=us-east-1
+
 EXPOSE 3000
 
 CMD ["npm", "start"]
