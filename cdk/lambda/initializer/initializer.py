@@ -67,7 +67,8 @@ def handler(event, context):
                 "group_description" varchar,
                 "group_access_code" varchar,
                 "group_student_access" bool,
-                "system_prompt" text
+                "system_prompt" text,
+                "empathy_enabled" bool default false
             );
 
             CREATE TABLE IF NOT EXISTS "patients" (
