@@ -126,11 +126,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   useEffect(() => {
     if (newMessage !== null) {
       if (currentSessionId === session?.session_id) {
+        // Enhanced duplicate detection
+        const contentKey = `${newMessage.student_sent ? 'student' : 'ai'}-${newMessage.message_content.trim()}`;
+        
         // Check if this message already exists in the messages array to prevent duplication
         const messageExists = messages.some(msg => 
           msg.message_id === newMessage.message_id || 
-          (msg.message_content === newMessage.message_content && 
-           msg.student_sent === newMessage.student_sent)
+          `${msg.student_sent ? 'student' : 'ai'}-${msg.message_content.trim()}` === contentKey
         );
         
         if (!messageExists) {
@@ -139,12 +141,19 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             // Double-check for duplicates again to be extra safe
             const isDuplicate = prevItems.some(msg => 
               msg.message_id === newMessage.message_id || 
-              (msg.message_content === newMessage.message_content && 
-               msg.student_sent === newMessage.student_sent)
+              `${msg.student_sent ? 'student' : 'ai'}-${msg.message_content.trim()}` === contentKey
             );
             
-            return isDuplicate ? prevItems : [...prevItems, newMessage];
+            if (isDuplicate) {
+              console.log('Prevented duplicate message from being added');
+              return prevItems;
+            } else {
+              console.log('Adding new message to chat');
+              return [...prevItems, newMessage];
+            }
           });
+        } else {
+          console.log('Message already exists in chat, not adding duplicate');
         }
       }
       setNewMessage(null);
@@ -272,9 +281,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   async function retrieveKnowledgeBase(message, sessionId) {
     try {
+      // Create a normalized version of the message for comparison
+      const normalizedMessage = message.trim();
+      
       // First check if this message already exists to avoid creating duplicates
       const messageExists = messages.some(msg => 
-        !msg.student_sent && msg.message_content === message
+        !msg.student_sent && msg.message_content.trim() === normalizedMessage
       );
       
       if (messageExists) {
@@ -309,11 +321,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         if (response.ok) {
           const data = await response.json();
           
+          // Create a content key for the new message
+          const contentKey = `ai-${data[0].message_content.trim()}`;
+          
           // Double-check if this message already exists in the messages array
           const messageExists = messages.some(msg => 
             msg.message_id === data[0].message_id || 
-            (msg.message_content === data[0].message_content && 
-             !msg.student_sent)
+            (!msg.student_sent && msg.message_content.trim() === data[0].message_content.trim())
           );
           
           if (!messageExists) {
@@ -763,10 +777,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       if (response.ok) {
         const data = await response.json();
         
-        // Remove any duplicate messages by message_id and content
+        // Enhanced duplicate detection and removal
         const uniqueMessages = [];
         const messageIds = new Set();
-        const messageContents = new Map(); // Track message content for student/AI separately
+        const messageContentMap = new Map(); // Track message content with sender type
         
         // First sort by time_sent to ensure we keep the earliest messages
         const sortedData = [...data].sort((a, b) => {
@@ -775,20 +789,22 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         
         sortedData.forEach(message => {
           // Create a unique key combining content and sender type
-          const contentKey = `${message.student_sent ? 'student' : 'ai'}-${message.message_content}`;
+          const contentKey = `${message.student_sent ? 'student' : 'ai'}-${message.message_content.trim()}`;
           
           // Check for duplicates by ID or content
-          if (!messageIds.has(message.message_id) && !messageContents.has(contentKey)) {
+          if (!messageIds.has(message.message_id) && !messageContentMap.has(contentKey)) {
             messageIds.add(message.message_id);
-            messageContents.set(contentKey, true);
+            messageContentMap.set(contentKey, true);
             uniqueMessages.push(message);
+          } else {
+            console.log('Filtered out duplicate message:', message.message_content.substring(0, 30) + '...');
           }
         });
         
         console.log(`Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`);
         setMessages(uniqueMessages);
       } else {
-        console.error("Failed to retreive session:", response.statusText);
+        console.error("Failed to retrieve session:", response.statusText);
         setMessages([]);
       }
     } catch (error) {
@@ -1012,10 +1028,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             />
           </div>
           <div className="flex-grow overflow-y-auto p-4 h-full">
-            {messages.map((message, index) =>
-              message.student_sent ? (
+            {messages.map((message, index) => {
+              // Create a unique key for each message to ensure proper rendering
+              const uniqueKey = `${message.message_id || index}-${message.student_sent ? 'student' : 'ai'}`;
+              
+              return message.student_sent ? (
                 <StudentMessage
-                  key={message.message_id}
+                  key={uniqueKey}
                   message={message.message_content}
                   isMostRecent={getMostRecentStudentMessageIndex() === index}
                   onDelete={() => handleDeleteMessage(message)}
@@ -1026,13 +1045,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 />
               ) : (
                 <AIMessage
-                  key={message.message_id}
+                  key={uniqueKey}
                   message={message.message_content}
                   profilePicture={profilePicture} // Pass profile picture URL to AIMessage
                   name={patient?.patient_name}      // Pass patient's name to display as fallback
                 />
-              )
-            )}
+              );
+            })}
 
             {/* TypingIndicator: Pass patient's name */}
             {isAItyping && <TypingIndicator patientName={patient?.patient_name} />}
