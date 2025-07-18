@@ -271,6 +271,27 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       });
   }
 
+  async function playNovaPcmBase64Audio(base64Data) {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)(
+      { sampleRate: 24000 }
+    ); // Nova uses 24kHz output
+
+    const rawData = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+    const audioBuffer = audioContext.createBuffer(1, rawData.length / 2, 24000); // mono, 16-bit = 2 bytes/sample
+
+    const channelData = audioBuffer.getChannelData(0);
+    for (let i = 0; i < channelData.length; i++) {
+      const sample = (rawData[i * 2 + 1] << 8) | rawData[i * 2]; // Little-endian
+      channelData[i] =
+        sample > 32767 ? (sample - 65536) / 32768 : sample / 32768;
+    }
+
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    source.start();
+  }
+
   function convertFloat32ToInt16(buffer) {
     const l = buffer.length;
     const buf = new Int16Array(l);
@@ -330,27 +351,27 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         "🔊 Playing audio, data length:",
         audioBytes ? audioBytes.length : 0
       );
-      const audio = new Audio(`data:audio/wav;base64,${audioBytes}`);
+      const rawData = Uint8Array.from(atob(audioBytes), (c) => c.charCodeAt(0));
+      const context = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 24000,
+      });
+      const audioBuffer = context.createBuffer(1, rawData.length / 2, 24000);
+      const channelData = audioBuffer.getChannelData(0);
 
-      audio.oncanplay = () => {
-        console.log("🔊 Audio ready to play");
-      };
+      for (let i = 0; i < channelData.length; i++) {
+        const sample = (rawData[i * 2 + 1] << 8) | rawData[i * 2];
+        channelData[i] =
+          sample > 32767 ? (sample - 65536) / 32768 : sample / 32768;
+      }
 
-      audio.onplay = () => {
-        console.log("🔊 Audio playback started");
-      };
-
-      audio.onended = () => {
+      const source = context.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(context.destination);
+      source.onended = () => {
         console.log("🔊 Audio playback completed");
       };
-
-      audio.onerror = (err) => {
-        console.error("🔊 Audio play error:", err);
-      };
-
-      audio.play().catch((err) => {
-        console.error("🔊 Audio play failed:", err);
-      });
+      source.start();
+      console.log("🔊 Audio playback started");
     } catch (error) {
       console.error("🔊 Audio processing failed:", error);
     }
