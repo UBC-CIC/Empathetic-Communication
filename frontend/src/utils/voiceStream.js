@@ -1,6 +1,6 @@
 // PCM-compatible real-time microphone audio stream using AudioContext for Nova Sonic
 
-import { getSocket, initializeSocket } from "../functions/socketConnection";
+import { socket } from "./socket";
 
 let audioContext;
 let processor;
@@ -15,11 +15,11 @@ export function startSpokenLLM(voice_id = "matthew") {
     return;
   }
 
-  // Initialize socket with the specified voice
-  const socket = initializeSocket(voice_id);
+  // Clean up any existing listeners to prevent duplicates
+  socket.off("nova-started");
 
-  // Set up a one-time event listener for nova-started
-  const onNovaStarted = (data) => {
+  // Use once instead of on to ensure the handler runs only once
+  socket.once("nova-started", () => {
     if (novaStarted) return;
     console.log("✅ Nova backend ready!");
     novaStarted = true;
@@ -55,20 +55,21 @@ export function startSpokenLLM(voice_id = "matthew") {
           console.error("🎤 Microphone access denied:", err);
         });
     }, 500);
-  };
+  });
 
-  // Socket connection and Nova startup are now handled by the socketConnection utility
-  console.log("🚀 Requesting Nova Sonic startup with voice: " + voice_id);
-  
-  // Add the nova-started event listener
-  socket.on("nova-started", onNovaStarted);
+  // Make sure socket is connected
+  if (!socket.connected) {
+    socket.connect();
+  }
+
+  console.log("🚀 Requesting Nova Sonic startup");
+  socket.emit("start-nova-sonic", { voice_id: voice_id });
 }
 
 export function stopSpokenLLM() {
   console.log("🛑 Stopping Nova Sonic voice stream...");
 
   // First send the end-audio signal
-  const socket = getSocket();
   socket.emit("end-audio");
 
   // Then clean up audio resources

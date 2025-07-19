@@ -1067,7 +1067,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               } else {
                 setShowVoiceOverlay(true);
                 const voice_id = "lennart";
-                // Using the updated voiceStream that works with secure WebSockets
                 startSpokenLLM(voice_id);
                 setIsRecording(true);
               }

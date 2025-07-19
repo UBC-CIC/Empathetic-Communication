@@ -6,22 +6,16 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import { VpcStack } from "./vpc-stack";
-
-export interface EcsSocketStackProps extends StackProps {
-  // No special props needed
-}
 
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
-  // Only using HTTP URL
 
   constructor(
     scope: Construct,
     id: string,
     vpcStack: VpcStack,
-    props?: EcsSocketStackProps
+    props?: StackProps
   ) {
     super(scope, id, props);
 
@@ -83,8 +77,6 @@ export class EcsSocketStack extends Stack {
       maxCapacity: 0,
     });
 
-    // No certificate needed for HTTP
-
     // Fargate service with load balancer
     const fargateService =
       new ecs_patterns.ApplicationLoadBalancedFargateService(
@@ -110,20 +102,15 @@ export class EcsSocketStack extends Stack {
 
     // Configure for WebSocket support
     fargateService.targetGroup.configureHealthCheck({
-      path: "/health",
+      path: "/",
       port: "3000",
       healthyHttpCodes: "200,404",
-      interval: Duration.seconds(30),
-      timeout: Duration.seconds(10),
-      healthyThresholdCount: 2,
-      unhealthyThresholdCount: 3,
     });
 
     // Enable sticky sessions for WebSocket
     fargateService.targetGroup.setAttribute("stickiness.enabled", "true");
     fargateService.targetGroup.setAttribute("stickiness.type", "lb_cookie");
 
-    // Use the load balancer DNS name for the socket URL
     this.socketUrl = `http://${fargateService.loadBalancer.loadBalancerDnsName}`;
 
     // Export the socket URL
