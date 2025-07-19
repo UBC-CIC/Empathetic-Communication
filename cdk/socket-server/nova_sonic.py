@@ -14,9 +14,19 @@ async def run_nova():
     
     if socket_url:
         print(f"Using socket URL: {socket_url}")
-        socket_client = socketio.AsyncClient()
+        # Configure socket client with SSL verification settings
+        ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
+        socket_client = socketio.AsyncClient(ssl_verify=ssl_verify)
+        
         try:
-            await socket_client.connect(socket_url)
+            # Connect with proper SSL configuration
+            await socket_client.connect(
+                socket_url,
+                transports=["websocket"],
+                wait_timeout=10,
+                wait=True,
+                socketio_path="socket.io"
+            )
             print("Socket connected successfully")
         except Exception as e:
             print(f"Socket connection failed: {e}")

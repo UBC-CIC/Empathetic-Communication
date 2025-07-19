@@ -6,16 +6,27 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ecs_patterns from "aws-cdk-lib/aws-ecs-patterns";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as targets from "aws-cdk-lib/aws-route53-targets";
 import { VpcStack } from "./vpc-stack";
+
+export interface EcsSocketStackProps extends StackProps {
+  domainName?: string;
+  certificateArn?: string;
+  hostedZoneId?: string;
+  createDnsRecord?: boolean;
+}
 
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
+  public readonly secureSocketUrl: string;
 
   constructor(
     scope: Construct,
     id: string,
     vpcStack: VpcStack,
-    props?: StackProps
+    props?: EcsSocketStackProps
   ) {
     super(scope, id, props);
 
@@ -77,6 +88,16 @@ export class EcsSocketStack extends Stack {
       maxCapacity: 0,
     });
 
+    // Set up certificate if provided
+    let certificate;
+    if (props?.certificateArn) {
+      certificate = acm.Certificate.fromCertificateArn(
+        this,
+        "Certificate",
+        props.certificateArn
+      );
+    }
+
     // Fargate service with load balancer
     const fargateService =
       new ecs_patterns.ApplicationLoadBalancedFargateService(
@@ -87,8 +108,10 @@ export class EcsSocketStack extends Stack {
           cpu: 512,
           memoryLimitMiB: 1024,
           desiredCount: 1,
-          listenerPort: 80,
-          protocol: elbv2.ApplicationProtocol.HTTP,
+          listenerPort: 443,
+          protocol: certificate ? elbv2.ApplicationProtocol.HTTPS : elbv2.ApplicationProtocol.HTTP,
+          certificate: certificate,
+          redirectHTTP: certificate ? true : false,
           taskImageOptions: {
             image: ecs.ContainerImage.fromAsset("./socket-server"),
             containerPort: 3000,
@@ -102,22 +125,54 @@ export class EcsSocketStack extends Stack {
 
     // Configure for WebSocket support
     fargateService.targetGroup.configureHealthCheck({
-      path: "/",
+      path: "/health",
       port: "3000",
       healthyHttpCodes: "200,404",
+      interval: Duration.seconds(30),
+      timeout: Duration.seconds(10),
+      healthyThresholdCount: 2,
+      unhealthyThresholdCount: 3,
     });
 
     // Enable sticky sessions for WebSocket
     fargateService.targetGroup.setAttribute("stickiness.enabled", "true");
     fargateService.targetGroup.setAttribute("stickiness.type", "lb_cookie");
 
-    this.socketUrl = `http://${fargateService.loadBalancer.loadBalancerDnsName}`;
+    // Create DNS record if domain name and hosted zone ID are provided
+    if (props?.domainName && props?.hostedZoneId && props?.createDnsRecord) {
+      const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'HostedZone', {
+        hostedZoneId: props.hostedZoneId,
+        zoneName: props.domainName.split('.').slice(-2).join('.')
+      });
 
-    // Export the socket URL
+      new route53.ARecord(this, 'SocketDnsRecord', {
+        zone: hostedZone,
+        recordName: props.domainName,
+        target: route53.RecordTarget.fromAlias(
+          new targets.LoadBalancerTarget(fargateService.loadBalancer)
+        ),
+      });
+
+      this.socketUrl = `http://${props.domainName}`;
+      this.secureSocketUrl = `https://${props.domainName}`;
+    } else {
+      this.socketUrl = `http://${fargateService.loadBalancer.loadBalancerDnsName}`;
+      this.secureSocketUrl = certificate 
+        ? `https://${fargateService.loadBalancer.loadBalancerDnsName}` 
+        : this.socketUrl;
+    }
+
+    // Export the socket URLs
     new cdk.CfnOutput(this, "SocketUrl", {
       value: this.socketUrl,
-      description: "Socket.IO server URL",
+      description: "Socket.IO server HTTP URL",
       exportName: `${id}-SocketUrl`,
+    });
+    
+    new cdk.CfnOutput(this, "SecureSocketUrl", {
+      value: this.secureSocketUrl,
+      description: "Socket.IO server HTTPS URL",
+      exportName: `${id}-SecureSocketUrl`,
     });
   }
 }

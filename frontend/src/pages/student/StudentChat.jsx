@@ -9,6 +9,7 @@ import { fetchUserAttributes } from "aws-amplify/auth";
 import DraggableNotes from "./DraggableNotes";
 import FilesPopout from "./FilesPopout";
 import { socket } from "../../utils/socket";
+import NovaVisualizer from "../../components/NovaVisualizer";
 import {
   startSpokenLLM,
   stopSpokenLLM,
@@ -65,6 +66,7 @@ function titleCase(str) {
 const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const audioRef = useRef(null);
   const [novaStarted, setNovaStarted] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
@@ -1180,6 +1182,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       </Dialog>
       {showVoiceOverlay && (
         <div className="fixed animate-fade inset-0 bg-white z-50 flex items-end justify-center pb-8">
+          <audio ref={audioRef} hidden />
+          <NovaVisualizer audio={audioRef.current} />
           <button
             onClick={() => {
               stopSpokenLLM();

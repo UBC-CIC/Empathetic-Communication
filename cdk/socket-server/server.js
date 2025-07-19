@@ -2,15 +2,33 @@ const express = require("express");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { spawn } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
+
+// Create HTTP server
 const server = createServer(app);
+
+// Configure Socket.IO with proper CORS settings
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: process.env.ALLOWED_ORIGINS || "*",
     methods: ["GET", "POST"],
+    credentials: true
   },
+  transports: ['websocket', 'polling']
 });
+
+// Add middleware to handle CORS for Express
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
+
 
 let novaProcess = null;
 let novaReady = false;
@@ -273,6 +291,14 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// Add a root route for health checks
+app.get('/', (req, res) => {
+  res.status(200).send('Socket server is running');
+});
+
+// Start the server
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Socket server running on port ${PORT}`);
+  console.log(`CORS allowed origins: ${process.env.ALLOWED_ORIGINS || '*'}`);
 });

@@ -1,0 +1,23 @@
+version: 1
+backend:
+  phases:
+    build:
+      commands:
+        - echo "Nothing to do in the build phase for backend..."
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd frontend
+        - npm ci
+    build:
+      commands:
+        - echo "REACT_APP_SOCKET_URL=${SOCKET_URL}" >> .env
+        - npm run build
+  artifacts:
+    baseDirectory: frontend/build
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - 'frontend/node_modules/**/*'
