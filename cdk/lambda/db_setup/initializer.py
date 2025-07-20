@@ -5,6 +5,7 @@ import psycopg2
 from psycopg2.extensions import AsIs
 import secrets
 import logging
+# Import from the same directory
 from migrations import run_migrations
 
 logger = logging.getLogger()
