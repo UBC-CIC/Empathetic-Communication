@@ -1,5 +1,4 @@
-# Virtual Care Interaction
-
+# Empathetic Communication
 This project leverages Large Language Models (LLMs) to revolutionize pharmacy education by enabling students to conduct realistic virtual patient interviews with diverse scenarios and personalities. By addressing limitations in existing tools, the prototype fosters practical skill development and offers scalable, GenAI-driven solutions for clinical education across institutions.
 
 
