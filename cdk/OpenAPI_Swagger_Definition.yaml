@@ -1607,6 +1607,118 @@ paths:
         passthroughBehavior: "when_no_match"
         httpMethod: "POST"
         type: "aws_proxy"
+  /student/empathy_summary:
+    options:
+      summary: CORS support
+      description: |
+        Enable CORS by returning correct headers
+      responses:
+        200:
+          $ref: "#/components/responses/Success"
+      x-amazon-apigateway-integration:
+        type: mock
+        requestTemplates:
+          application/json: |
+            {
+              "statusCode" : 200
+            }
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'*'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            responseTemplates:
+              application/json: |
+                {}
+    get:
+      tags:
+        - Student
+      summary: Get empathy evaluation summary for a student
+      operationId: student_empathy_summary_GET
+      parameters:
+        - in: query
+          name: session_id
+          required: true
+          description: ID of the session
+          schema:
+            type: string
+        - in: query
+          name: email
+          required: true
+          description: Email of the student
+          schema:
+            type: string
+        - in: query
+          name: simulation_group_id
+          required: true
+          description: ID of the simulation group
+          schema:
+            type: string
+        - in: query
+          name: patient_id
+          required: true
+          description: ID of the patient
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Empathy evaluation summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  overall_score:
+                    type: string
+                    description: Average empathy score
+                  overall_level:
+                    type: string
+                    description: Empathy level description
+                  total_interactions:
+                    type: integer
+                    description: Total number of interactions
+                  empathy_interactions:
+                    type: integer
+                    description: Number of interactions with empathy evaluations
+                  avg_perspective_taking:
+                    type: string
+                    description: Average perspective-taking score
+                  avg_emotional_resonance:
+                    type: string
+                    description: Average emotional resonance score
+                  avg_acknowledgment:
+                    type: string
+                    description: Average acknowledgment score
+                  avg_language_communication:
+                    type: string
+                    description: Average language & communication score
+                  avg_cognitive_empathy:
+                    type: string
+                    description: Average cognitive empathy score
+                  avg_affective_empathy:
+                    type: string
+                    description: Average affective empathy score
+                  summary:
+                    type: string
+                    description: Summary of empathy performance
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      security:
+        - studentAuthorizer: []
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${studentFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        type: "aws_proxy"
  
   /instructor/student_group:
     options:

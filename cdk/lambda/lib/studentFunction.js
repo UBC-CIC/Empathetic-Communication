@@ -1167,6 +1167,14 @@ exports.handler = async (event) => {
           response.body = JSON.stringify({ error: "student_email and simulation_group_id are required" });
         }
         break;
+      case "GET /student/empathy_summary":
+        // Import the studentEmpathySummary handler
+        const studentEmpathySummary = require('./studentEmpathySummary');
+        // Call the handler and return its response
+        const empathySummaryResponse = await studentEmpathySummary(event, sqlConnection);
+        response.statusCode = empathySummaryResponse.statusCode;
+        response.body = empathySummaryResponse.body;
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import DraggableNotes from "./DraggableNotes";
 import FilesPopout from "./FilesPopout";
+import EmpathyCoachSummary from "../../components/EmpathyCoachSummary";
 
 import { signOut } from "aws-amplify/auth";
 
@@ -20,6 +21,7 @@ import {
 import DescriptionIcon from "@mui/icons-material/Description";
 import InfoIcon from "@mui/icons-material/Info";
 import KeyIcon from '@mui/icons-material/Key';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 
 
 // Importing l-mirage animation
@@ -69,6 +71,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isPatientInfoOpen, setIsPatientInfoOpen] = useState(false);
   const [isAnswerKeyOpen, setIsAnswerKeyOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
+  const [empathySummary, setEmpathySummary] = useState(null);
+  const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
 
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
   const [isInfoLoading, setIsInfoLoading] = useState(false);
@@ -270,6 +275,45 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     } finally {      
       setIsInfoLoading(false);
       setIsAnswerLoading(false);
+    }
+  };
+
+  // Function to fetch empathy summary
+  const fetchEmpathySummary = async () => {
+    if (!session || !patient) return;
+    
+    setIsEmpathyLoading(true);
+    try {
+      const authSession = await fetchAuthSession();
+      const { email } = await fetchUserAttributes();
+      const token = authSession.tokens.idToken;
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}student/empathy_summary?session_id=${encodeURIComponent(
+          session.session_id
+        )}&email=${encodeURIComponent(email)}&simulation_group_id=${encodeURIComponent(
+          group.simulation_group_id
+        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setEmpathySummary(data);
+        setIsEmpathyCoachOpen(true);
+      } else {
+        console.error("Failed to fetch empathy summary:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error fetching empathy summary:", error);
+    } finally {
+      setIsEmpathyLoading(false);
     }
   };
 
@@ -920,8 +964,29 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               ))}
           </div>
 
-          {/* Notes and Patient Info Buttons */}
+          {/* Notes, Empathy Coach, and Patient Info Buttons */}
           <div className="mt-auto px-8 mb-8">
+            {/* Empathy Coach Button */}
+            <button
+              onClick={fetchEmpathySummary}
+              className="border border-black bg-transparent pt-2 pb-2 w-full hover:scale-105 transition-transform duration-300 mb-4"
+              disabled={isEmpathyLoading}
+            >
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  justifyContent: sidebarWidth <= 160 ? "center" : "flex-start",
+                }}
+              >
+                <PsychologyIcon
+                  className={sidebarWidth <= 160 ? "mx-auto" : "mr-2"}
+                  style={{ color: "black" }}
+                />
+                {sidebarWidth > 160 && <span className="text-black">Empathy Coach</span>}
+              </div>
+            </button>
+            
+            {/* Notes Button */}
             <button
               onClick={() => setIsNotesOpen(true)}
               className="border border-black bg-transparent pt-2 pb-2 w-full hover:scale-105 transition-transform duration-300"
@@ -1085,6 +1150,31 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           files={answerKeyFiles}
           isLoading={isAnswerLoading}
         />
+        
+        {/* Empathy Coach Dialog */}
+        <Dialog 
+          open={isEmpathyCoachOpen} 
+          onClose={() => setIsEmpathyCoachOpen(false)}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            Empathy Coach Summary
+            {patient && ` - ${patient.patient_name}`}
+          </DialogTitle>
+          <DialogContent>
+            {isEmpathyLoading ? (
+              <Typography>Loading empathy summary...</Typography>
+            ) : (
+              <EmpathyCoachSummary empathyData={empathySummary} />
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setIsEmpathyCoachOpen(false)} color="primary">
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Confirmation Dialog for Reveal */}
         <Dialog open={isConfirmOpen} onClose={handleCloseConfirm}>
