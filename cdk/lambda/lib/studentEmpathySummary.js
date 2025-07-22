@@ -90,7 +90,10 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     let areasForImprovement = [];
     let recommendations = [];
     let recommendedApproach = "";
-    let realism = "realistic";
+    let realisticCount = 0;
+    let unrealisticCount = 0;
+    let whyRealistic = [];
+    let whyUnrealistic = [];
     
     // Process all evaluations
     empathyData.forEach(row => {
@@ -128,9 +131,21 @@ const studentEmpathySummary = async (event, sqlConnection) => {
               recommendedApproach = evaluation.feedback.alternative_phrasing;
             }
             
-            // Check realism
+            // Count realism flags and collect reasoning
             if (evaluation.realism_flag === 'unrealistic') {
-              realism = 'unrealistic';
+              unrealisticCount++;
+              
+              // Collect why_unrealistic feedback
+              if (evaluation.feedback && evaluation.feedback.why_unrealistic) {
+                whyUnrealistic.push(evaluation.feedback.why_unrealistic);
+              }
+            } else {
+              realisticCount++;
+              
+              // Collect why_realistic feedback
+              if (evaluation.feedback && evaluation.feedback.why_realistic) {
+                whyRealistic.push(evaluation.feedback.why_realistic);
+              }
             }
           }
         }
@@ -209,6 +224,35 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     const uniqueStrengths = [...new Set(strengths)];
     const uniqueAreasForImprovement = [...new Set(areasForImprovement)];
     const uniqueRecommendations = [...new Set(recommendations)];
+    const uniqueWhyRealistic = [...new Set(whyRealistic)];
+    const uniqueWhyUnrealistic = [...new Set(whyUnrealistic)];
+    
+    // Generate realism explanation based on the most common assessment
+    const isRealistic = realisticCount >= unrealisticCount;
+    let realismExplanation = '';
+    
+    // If we have both realistic and unrealistic responses, provide a balanced explanation
+    if (realisticCount > 0 && unrealisticCount > 0) {
+      // Get the most recent or most representative explanations
+      const realisticReason = uniqueWhyRealistic.length > 0 ? uniqueWhyRealistic[0] : '';
+      const unrealisticReason = uniqueWhyUnrealistic.length > 0 ? uniqueWhyUnrealistic[0] : '';
+      
+      if (isRealistic) {
+        realismExplanation = `While most of your responses are realistic, some contained unrealistic elements. ${realisticReason} However, be mindful that ${unrealisticReason.toLowerCase()}`;
+      } else {
+        realismExplanation = `Some of your responses contained unrealistic elements. ${unrealisticReason} To improve, ${realisticReason.toLowerCase()}`;
+      }
+    } else if (isRealistic) {
+      // All or mostly realistic responses
+      realismExplanation = uniqueWhyRealistic.length > 0 
+        ? uniqueWhyRealistic[0] 
+        : 'Your responses use appropriate clinical language and approaches consistent with healthcare practice.';
+    } else {
+      // All or mostly unrealistic responses
+      realismExplanation = uniqueWhyUnrealistic.length > 0 
+        ? uniqueWhyUnrealistic[0] 
+        : 'Your responses contain elements that may not align with typical clinical practice.';
+    }
     
     return {
       statusCode: 200,
@@ -228,7 +272,8 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         areas_for_improvement: uniqueAreasForImprovement.length > 0 ? uniqueAreasForImprovement : null,
         recommendations: uniqueRecommendations.length > 0 ? uniqueRecommendations : null,
         recommended_approach: recommendedApproach || null,
-        realism_assessment: `Your responses are generally ${realism}`
+        realism_assessment: `Your responses are generally ${realisticCount >= unrealisticCount ? 'realistic' : 'unrealistic'}`,
+        realism_explanation: realismExplanation
       }),
     };
   } catch (error) {

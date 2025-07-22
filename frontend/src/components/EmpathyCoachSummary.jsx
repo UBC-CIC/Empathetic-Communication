@@ -136,9 +136,15 @@ const EmpathyCoachSummary = ({ empathyData }) => {
                 <Typography variant="subtitle1">Realism Assessment</Typography>
               </TableCell>
               <TableCell>
-                <Typography>
-                  {empathyData.realism_assessment || "Your responses are generally realistic"} ✅
-                </Typography>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                  <Typography>
+                    {empathyData.realism_assessment || "Your responses are generally realistic"}
+                    {!empathyData.realism_assessment?.includes("unrealistic") && " ✅"}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontStyle: "italic", mt: 0.5 }}>
+                    {empathyData.realism_explanation || ""}
+                  </Typography>
+                </Box>
               </TableCell>
             </TableRow>
 

@@ -1703,6 +1703,12 @@ paths:
                   summary:
                     type: string
                     description: Summary of empathy performance
+                  realism_assessment:
+                    type: string
+                    description: Assessment of response realism
+                  realism_explanation:
+                    type: string
+                    description: Detailed explanation of realism assessment
         "400":
           description: Bad Request
         "401":
