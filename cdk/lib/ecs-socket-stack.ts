@@ -63,7 +63,7 @@ export class EcsSocketStack extends Stack {
     const container = taskDef.addContainer("SocketContainer", {
       image: ecs.ContainerImage.fromAsset("./socket-server"),
       portMappings: [{ containerPort: 443 }], // Match the HTTPS server port
-      logging: ecs.LogDrivers.awsLogs({ 
+      logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "Socket",
         logRetention: 7, // Keep logs for 7 days for troubleshooting
       }),
