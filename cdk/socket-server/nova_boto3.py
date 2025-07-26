@@ -191,6 +191,9 @@ class NovaSonic:
         self.response = asyncio.create_task(self._process_responses())
 
         print(f"✅ Nova Sonic session started (Prompt ID: {self.prompt_name})", flush=True)
+        # at the end of start_session() in nova_sonic.py
+        print(json.dumps({ "type": "text", "text": "Nova Sonic ready" }), flush=True)
+
 
 
     async def start_audio_input(self):
