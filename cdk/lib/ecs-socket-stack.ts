@@ -1,10 +1,13 @@
-import { Stack, StackProps, CfnOutput } from "aws-cdk-lib";
-import { Construct } from "constructs";
-import * as ecs from "aws-cdk-lib/aws-ecs";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import * as iam from "aws-cdk-lib/aws-iam";
 import * as cdk from "aws-cdk-lib";
+import { Stack, StackProps, CfnOutput, Duration } from "aws-cdk-lib";
+import { Construct } from "constructs";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as logs from "aws-cdk-lib/aws-logs";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import { VpcStack } from "./vpc-stack";
 
 export class EcsSocketStack extends Stack {
@@ -20,8 +23,10 @@ export class EcsSocketStack extends Stack {
 
     const vpc = vpcStack.vpc;
 
+    // 1) ECS cluster
     const cluster = new ecs.Cluster(this, "SocketCluster", { vpc });
 
+    // 2) Task role
     const taskRole = new iam.Role(this, "SocketTaskRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
       managedPolicies: [
@@ -53,25 +58,28 @@ export class EcsSocketStack extends Stack {
       },
     });
 
+    // 3) Fargate task definition
     const taskDef = new ecs.FargateTaskDefinition(this, "SocketTaskDef", {
-      cpu: 1024, // Doubled CPU for better performance
-      memoryLimitMiB: 2048, // Doubled memory for better stability
+      cpu: 1024,
+      memoryLimitMiB: 2048,
       taskRole,
       executionRole: taskRole,
     });
 
-    const container = taskDef.addContainer("SocketContainer", {
+    // 4) Container listening on port 80
+    taskDef.addContainer("SocketContainer", {
       image: ecs.ContainerImage.fromAsset("./socket-server"),
-      portMappings: [{ containerPort: 443 }], // Match the HTTPS server port
+      portMappings: [{ containerPort: 80 }],
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: "Socket",
-        logRetention: 7, // Keep logs for 7 days for troubleshooting
+        logRetention: logs.RetentionDays.THREE_MONTHS,
       }),
       environment: {
         NODE_ENV: "production",
       },
     });
 
+    // 5) ECS service
     const service = new ecs.FargateService(this, "SocketService", {
       cluster,
       taskDefinition: taskDef,
@@ -80,35 +88,52 @@ export class EcsSocketStack extends Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
 
+    // 5.1) Allow the NLB (and CloudFront via NLB) to reach your service on port 80
+    service.connections.allowFromAnyIpv4(
+      ec2.Port.tcp(80),
+      "AllowHTTPFromLoadBalancer"
+    );
+
+    // 6) Network Load Balancer on TCP 80
     const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
       vpc,
       internetFacing: true,
     });
-
     const listener = nlb.addListener("TcpListener", {
-      port: 443,
-      protocol: elbv2.Protocol.TCP, // TCP passthrough for TLS
-    });
-
-    listener.addTargets("EcsTargetGroup", {
-      port: 443,
+      port: 80,
       protocol: elbv2.Protocol.TCP,
+    });
+    listener.addTargets("EcsTargetGroup", {
+      protocol: elbv2.Protocol.TCP,
+      port: 80,
       targets: [service],
       healthCheck: {
-        protocol: elbv2.Protocol.TCP, // TCP health check only
-        port: "443",
+        protocol: elbv2.Protocol.TCP,
+        port: "80",
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 10, // More tolerance for startup issues
-        interval: cdk.Duration.seconds(120), // Much longer interval between checks
-        timeout: cdk.Duration.seconds(60), // Extended timeout
+        unhealthyThresholdCount: 10,
+        interval: Duration.seconds(120),
+        timeout: Duration.seconds(60),
       },
     });
 
-    this.socketUrl = `wss://${nlb.loadBalancerDnsName}`;
+    // 7) CloudFront distribution in front of the NLB
+    const distro = new cloudfront.Distribution(this, "SocketDistro", {
+      defaultBehavior: {
+        origin: new origins.HttpOrigin(nlb.loadBalancerDnsName, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+        }),
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL, // Supports WebSocket Upgrade
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED, // Disable caching
+        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER, // Forward all headers (incl. Upgrade)
+      },
+    });
 
+    // 8) Output the wss:// URL using the CloudFront domain
+    this.socketUrl = `wss://${distro.domainName}`;
     new CfnOutput(this, "SocketUrl", {
       value: this.socketUrl,
-      description: "WebSocket server URL via NLB TCP passthrough with TLS",
+      description: "WebSocket server URL via CloudFront + NLB",
       exportName: `${id}-SocketUrl`,
     });
   }
