@@ -11,29 +11,17 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
-let novaProcess = null;
-let novaReady = false;
-
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get("/health", (req, res) => {
   res.json({ status: "healthy" });
 });
 
-// ─── Debug Endpoint ───────────────────────────────────────────────────────────
-app.get("/debug", (req, res) => {
-  res.json({
-    status: "healthy",
-    novaReady,
-    novaProcessActive: novaProcess !== null,
-    novaProcessPid: novaProcess ? novaProcess.pid : null,
-    connectedClients: io.engine.clientsCount,
-    timestamp: new Date().toISOString(),
-  });
-});
-
 // ─── Socket.IO Connection ─────────────────────────────────────────────────────
 io.on("connection", (socket) => {
   console.log("🔌 CLIENT CONNECTED:", socket.id);
+
+  let novaProcess = null;
+  let novaReady = false;
 
   // Small delay then log active client count
   setTimeout(() => {
@@ -48,6 +36,8 @@ io.on("connection", (socket) => {
   socket.on("start-nova-sonic", (config = {}) => {
     console.log("🚀 Starting Nova Sonic session for client:", socket.id);
     console.log("🎙️ Voice configuration:", config);
+
+    audioStarted = false;
 
     // Kill any previous process
     if (novaProcess) {
@@ -97,7 +87,7 @@ io.on("connection", (socket) => {
               console.log(`✅ NOVA AUDIO DECODED: ${buffer.length} bytes`);
 
               // Emit to clients
-              io.emit("audio-chunk", { data: parsed.data });
+              socket.emit("audio-chunk", { data: parsed.data });
               console.log("🔊 AUDIO SENT TO FRONTEND");
             }
             // ─ Debug messages ───────────────────────────────────────────
@@ -107,10 +97,10 @@ io.on("connection", (socket) => {
             // ─ Text messages ─────────────────────────────────────────────
             else if (parsed.type === "text") {
               console.log("💬 NOVA TEXT:", parsed.text);
-              io.emit("text-message", { text: parsed.text });
+              socket.emit("text-message", { text: parsed.text });
               if (parsed.text.includes("Nova Sonic ready")) {
                 novaReady = true;
-                io.emit("nova-started", {
+                socket.emit("nova-started", {
                   status: "Nova Sonic session started",
                 });
               }
@@ -120,7 +110,7 @@ io.on("connection", (socket) => {
             console.log("[python]", line);
             if (line.includes("Nova Sonic ready")) {
               novaReady = true;
-              io.emit("nova-started", {
+              socket.emit("nova-started", {
                 status: "Nova Sonic session started",
               });
             }

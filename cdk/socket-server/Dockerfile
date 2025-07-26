@@ -14,13 +14,6 @@ COPY *.py ./
 COPY requirements.txt ./
 RUN pip3 install --break-system-packages -r requirements.txt
 
-# Copy certs for HTTPS
-COPY certs /etc/certs
-# Ensure proper permissions for certificates and ownership
-# RUN chmod 600 /etc/certs/server.key && \
-#     chmod 644 /etc/certs/server.crt && \
-#     ls -la /etc/certs
-
 # Copy server files
 COPY server.js ./
 
