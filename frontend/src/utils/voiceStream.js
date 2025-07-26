@@ -322,6 +322,8 @@ function playBufferedAudio() {
     const cy = HEIGHT / 2;
     const baseRadius = Math.min(cx, cy) * 0.6; // inner circle
     const amplitude = Math.min(cx, cy) * 0.4; // how far waveform swings
+    const smoothing = 0.1; // lower = smoother
+    const smoothed = new Float32Array(bufferLength).fill(baseRadius);
 
     function draw() {
       animationId = requestAnimationFrame(draw);
@@ -331,19 +333,23 @@ function playBufferedAudio() {
       ctx.beginPath();
 
       for (let i = 0; i < bufferLength; i++) {
-        // normalize [0..255] → [0..1]
-        const v = dataArray[i] / 255;
-        // map to radius: base ± swing
-        const r = baseRadius + (v - 0.5) * amplitude * 2;
+        const v = dataArray[i] / 255; // [0..1]
+        const targetR = baseRadius + (v - 0.5) * amplitude * 2; // map to radius
+        smoothed[i] += (targetR - smoothed[i]) * smoothing; // exponential smoothing
+
         const angle = (i / bufferLength) * Math.PI * 2;
-        const x = cx + r * Math.cos(angle);
-        const y = cy + r * Math.sin(angle);
+        const x = cx + smoothed[i] * Math.cos(angle);
+        const y = cy + smoothed[i] * Math.sin(angle);
 
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
 
       ctx.closePath();
+      // fill first
+      ctx.fillStyle = "rgba(0, 180, 255, 0.3)";
+      ctx.fill();
+      // then stroke
       ctx.strokeStyle = "rgba(0, 180, 255, 0.8)";
       ctx.lineWidth = 2;
       ctx.stroke();
