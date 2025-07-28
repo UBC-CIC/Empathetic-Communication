@@ -240,7 +240,7 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       if (isRealistic) {
         realismExplanation = `While most of your responses are realistic, some contained unrealistic elements. ${realisticReason} However, be mindful that ${unrealisticReason.toLowerCase()}`;
       } else {
-        realismExplanation = `Some of your responses contained unrealistic elements. ${unrealisticReason} To improve, ${realisticReason.toLowerCase()}`;
+        realismExplanation = `Some of your responses contained unrealistic elements. ${unrealisticReason} In terms of what went well, ${realisticReason.toLowerCase()}`;
       }
     } else if (isRealistic) {
       // All or mostly realistic responses

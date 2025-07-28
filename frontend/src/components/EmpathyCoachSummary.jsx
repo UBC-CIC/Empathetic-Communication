@@ -32,7 +32,7 @@ const EmpathyCoachSummary = ({ empathyData }) => {
     const stars = "⭐".repeat(Math.round(score));
     return (
       <Typography component="span" sx={{ ml: 1 }}>
-        {stars} ({score}/5)
+        {stars}
       </Typography>
     );
   };
