@@ -61,7 +61,13 @@ export class EcsSocketStack extends Stack {
     taskRole.addToPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
-        actions: ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"],
+        actions: [
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+        ],
         resources: [
           `arn:aws:dynamodb:${this.region}:${this.account}:table/DynamoDB-Conversation-Table`,
         ],

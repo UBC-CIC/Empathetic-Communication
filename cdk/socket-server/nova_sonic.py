@@ -308,8 +308,11 @@ class NovaSonic:
             if self.role == "ASSISTANT":
                 print(f"Assistant: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
+                langchain_chat_history.add_message(self.session_id, "ai", text)
             elif self.role == "USER":
                 print(f"User: {text}", flush=True)
+                print(json.dumps({"type": "text", "text": text}), flush=True)
+                langchain_chat_history.add_message(self.session_id, "user", text)
 
         # audioOutput
         elif "audioOutput" in evt:
