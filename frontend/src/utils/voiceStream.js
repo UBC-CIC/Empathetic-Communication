@@ -12,7 +12,7 @@ let dataArray;
 let animationId;
 let novaStartListenerAttached = false;
 
-export function startSpokenLLM(voice_id = "matthew", setLoading) {
+export function startSpokenLLM(voice_id = "matthew", setLoading, session_id) {
   if (novaStarted) {
     console.warn("🔁 Nova Sonic is already started.");
     return;
@@ -67,7 +67,10 @@ export function startSpokenLLM(voice_id = "matthew", setLoading) {
   }
 
   console.log("🚀 Requesting Nova Sonic startup");
-  socket.emit("start-nova-sonic", { voice_id: voice_id });
+  socket.emit("start-nova-sonic", {
+    voice_id: voice_id,
+    session_id: session_id || "default",
+  });
 }
 
 export function stopSpokenLLM() {

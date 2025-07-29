@@ -49,11 +49,12 @@ io.on("connection", (socket) => {
 
     // Spawn the actual CLI entrypoint, unbuffered, passing env vars
     const PORT = process.env.PORT || 80;
-    novaProcess = spawn("python3", ["nova_boto3.py"], {
+    novaProcess = spawn("python3", ["nova_sonic.py"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
         SOCKET_URL: `http://127.0.0.1:${PORT}`,
+        SESSION_ID: config.session_id || "default",
         VOICE_ID: config.voice_id || "",
         SSL_VERIFY: "false",
       },

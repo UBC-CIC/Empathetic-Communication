@@ -58,6 +58,16 @@ export class EcsSocketStack extends Stack {
       },
     });
 
+    taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"],
+        resources: [
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/DynamoDB-Conversation-Table`,
+        ],
+      })
+    );
+
     // 3) Fargate task definition
     const taskDef = new ecs.FargateTaskDefinition(this, "SocketTaskDef", {
       cpu: 1024,

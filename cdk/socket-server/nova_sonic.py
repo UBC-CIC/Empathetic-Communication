@@ -10,6 +10,7 @@ from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWith
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
 from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4AuthScheme
 from smithy_aws_core.credentials_resolvers.environment import EnvironmentCredentialsResolver
+import langchain_chat_history
 
 # Audio config
 INPUT_SAMPLE_RATE = 16000
@@ -42,7 +43,7 @@ class NovaSonic:
         if creds.token:
             os.environ['AWS_SESSION_TOKEN'] = creds.token
 
-    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1', socket_client=None, voice_id=None):
+    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1', socket_client=None, voice_id=None, session_id=None):
         self.refresh_env_credentials()
         self.model_id = model_id
         self.region = region
@@ -57,6 +58,7 @@ class NovaSonic:
         self.role = None
         self.display_assistant_text = False  # maybe change later?
         self.voice_id = voice_id  # Store the voice ID passed from frontend
+        self.session_id = session_id or os.getenv("SESSION_ID", "default")  # load from env as fallback
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
@@ -71,12 +73,16 @@ class NovaSonic:
         self.client = BedrockRuntimeClient(config=config)
         print(f"Initialized Bedrock client for model {self.model_id} in region {self.region}")
 
-    async def send_event(self, event_json):
-        """Send an event to the stream"""
-        event = InvokeModelWithBidirectionalStreamInputChunk(
-            value=BidirectionalInputPayloadPart(bytes_=event_json.encode('utf-8'))
+    async def send_event(self, event: dict):
+        """
+        Given a Python dict, serialize it _without_ leading/trailing
+        whitespace and send exactly one JSON object per chunk.
+        """
+        payload = json.dumps(event, separators=(",", ":"))
+        chunk = InvokeModelWithBidirectionalStreamInputChunk(
+            value=BidirectionalInputPayloadPart(bytes_=payload.encode("utf-8"))
         )
-        await self.stream.input_stream.send(event)
+        await self.stream.input_stream.send(chunk)
 
     async def start_session(self):
         """Start a new Nova Sonic session"""
@@ -88,27 +94,26 @@ class NovaSonic:
             InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
         )
         print("✅ Bidirectional stream initialized with Nova Sonic", flush=True)
-
+        print(f"🗂️ Using session_id: {self.session_id}", flush=True)
         
         self.is_active = True
 
         # Send session start event
-        session_start = '''
-        {
-            "event": {
-                "sessionStart": {
-                "inferenceConfiguration": {
-                    "maxTokens": 2048,
-                    "topP": 1.0,
-                    "temperature": 0.8,
-                    "stopSequences": []
-                    }
-                }
+
+        # 1) sessionStart
+        await self.send_event({
+        "event": {
+            "sessionStart": {
+            "inferenceConfiguration": {
+                "maxTokens": 2048,
+                "topP": 1.0,
+                "temperature": 0.8,
+                "stopSequences": []
+            }
             }
         }
-        '''
+        })
 
-        await self.send_event(session_start)
         
         # Send prompt start event
         voice_ids = {"feminine": ["amy", "tiffany", "lupe"], "masculine": ["matthew", "carlos"]}
@@ -116,76 +121,72 @@ class NovaSonic:
         # Use the voice ID from frontend if provided, otherwise select a random feminine voice
         selected_voice = self.voice_id if self.voice_id else random.choice(voice_ids['feminine'])
         
-        prompt_start = f'''
-        {{
-          "event": {{
-            "promptStart": {{
-              "promptName": "{self.prompt_name}",
-              "textOutputConfiguration": {{
+        # 2) promptStart
+        await self.send_event({
+        "event": {
+            "promptStart": {
+            "promptName": self.prompt_name,
+            "textOutputConfiguration": {
                 "mediaType": "text/plain"
-              }},
-              "audioOutputConfiguration": {{
+            },
+            "audioOutputConfiguration": {
                 "mediaType": "audio/lpcm",
                 "sampleRateHertz": 24000,
                 "sampleSizeBits": 16,
                 "channelCount": 1,
-                "voiceId": "{selected_voice}",
+                "voiceId": selected_voice,
                 "encoding": "base64",
                 "audioType": "SPEECH"
-              }}
-            }}
-          }}
-        }}
-        ''' # Using the selected voice ID
+            }
+            }
+        }
+        })
 
-        await self.send_event(prompt_start)
 
-        # Send system prompt
-        text_content_start = f'''
-        {{
-            "event": {{
-                "contentStart": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.content_name}",
-                    "type": "TEXT",
-                    "interactive": true,
-                    "role": "SYSTEM",
-                    "textInputConfiguration": {{
-                        "mediaType": "text/plain"
-                    }}
-                }}
-            }}
-        }}
-        '''
+        # 3) SYSTEM contentStart
+        await self.send_event({
+        "event": {
+            "contentStart": {
+            "promptName": self.prompt_name,
+            "contentName": self.content_name,
+            "type": "TEXT",
+            "interactive": True,
+            "role": "SYSTEM",
+            "textInputConfiguration": {
+                "mediaType": "text/plain"
+            }
+            }
+        }
+        })
 
-        await self.send_event(text_content_start)
 
-        system_prompt = "You are to act as a concerned patient with a diagnosis of migraine headaches. I will ask you questions to help diagnose your condition. Please answer as accurately as possible. Sound distressed if you are in pain or uncomfortable. If you are not in distress, please respond calmly and clearly. IMPORTANT: Always respond with both text and audio. Do not remain silent. Speak directly to me as if we are having a conversation."
+        chat_context = langchain_chat_history.format_chat_history(self.session_id)
+
+        system_prompt = f"""{chat_context}
+                        You are to act as a concerned patient..."""
         
-        text_input = f'''
-        {{
-            "event": {{
-                "textInput": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.content_name}",
-                    "content": "{system_prompt}"
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(text_input)
+        # 4) textInput (your system prompt)
+        await self.send_event({
+        "event": {
+            "textInput": {
+            "promptName": self.prompt_name,
+            "contentName": self.content_name,
+            "content": system_prompt
+            }
+        }
+        })
 
-        text_content_end = f'''
-        {{
-            "event": {{
-                "contentEnd": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.content_name}"
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(text_content_end)
+
+        # 5) contentEnd
+        await self.send_event({
+        "event": {
+            "contentEnd": {
+            "promptName": self.prompt_name,
+            "contentName": self.content_name
+            }
+        }
+        })
+
 
         # Start processing responses
         self.response = asyncio.create_task(self._process_responses())
@@ -197,141 +198,131 @@ class NovaSonic:
 
 
     async def start_audio_input(self):
-        """Start audio input stream."""
-
-        self.audio_content_name = str(uuid.uuid4())  # NEW valid name
-        audio_content_start = f'''
-        {{
-            "event": {{
-                "contentStart": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.audio_content_name}",
-                    "type": "AUDIO",
-                    "interactive": true,
-                    "role": "USER",
-                    "audioInputConfiguration": {{
-                        "mediaType": "audio/lpcm",
-                        "sampleRateHertz": 16000,
-                        "sampleSizeBits": 16,
-                        "channelCount": 1,
-                        "audioType": "SPEECH",
-                        "encoding": "base64"
-                    }}
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(audio_content_start)
-    
-    async def send_audio_chunk(self, audio_bytes):
-        """Send an audio chunk to the stream."""
-        if not self.is_active:
-            return
-            
-        blob = base64.b64encode(audio_bytes)
-        audio_event = f'''
-        {{
-            "event": {{
-                "audioInput": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.audio_content_name}",
-                    "content": "{blob.decode('utf-8')}"
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(audio_event)
-    
-    async def end_audio_input(self):
-        """End audio input stream."""
-        audio_content_end = f'''
-        {{
-            "event": {{
-                "contentEnd": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.audio_content_name}"
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(audio_content_end)
-    
-    async def end_session(self):
-        """End the session."""
-        if not self.is_active:
-            return
-            
-        prompt_end = f'''
-        {{
-            "event": {{
-                "promptEnd": {{
-                    "promptName": "{self.prompt_name}"
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(prompt_end)
-        
-        session_end = '''
-        {
-            "event": {
-                "sessionEnd": {}
+        self.audio_content_name = str(uuid.uuid4())
+        await self.send_event({
+        "event": {
+            "contentStart": {
+            "promptName": self.prompt_name,
+            "contentName": self.audio_content_name,
+            "type": "AUDIO",
+            "interactive": True,
+            "role": "USER",
+            "audioInputConfiguration": {
+                "mediaType": "audio/lpcm",
+                "sampleRateHertz": INPUT_SAMPLE_RATE,
+                "sampleSizeBits": 16,
+                "channelCount": CHANNELS,
+                "audioType": "SPEECH",
+                "encoding": "base64"
+            }
             }
         }
-        '''
-        await self.send_event(session_end)
-        # close the stream
+        })
+    
+    async def send_audio_chunk(self, audio_bytes):
+        blob = base64.b64encode(audio_bytes).decode("utf-8")
+        await self.send_event({
+        "event": {
+            "audioInput": {
+            "promptName": self.prompt_name,
+            "contentName": self.audio_content_name,
+            "content": blob
+            }
+        }
+        })
+    
+    async def end_audio_input(self):
+        await self.send_event({
+        "event": {
+            "contentEnd": {
+            "promptName": self.prompt_name,
+            "contentName": self.audio_content_name
+            }
+        }
+        })
+
+    
+    async def end_session(self):
+        # promptEnd
+        await self.send_event({
+        "event": {
+            "promptEnd": { "promptName": self.prompt_name }
+        }
+        })
+        # sessionEnd
+        await self.send_event({
+        "event": { "sessionEnd": {} }
+        })
         await self.stream.input_stream.close()
 
+
     async def _process_responses(self):
-        """Process responses from the stream."""
+        """Process responses from the stream, buffering partial JSON."""
+        decoder = json.JSONDecoder()
+        buffer = ""  # accumulate incoming text here
+
         try:
             while self.is_active:
                 output = await self.stream.await_output()
                 result = await output[1].receive()
 
-                if result.value and result.value.bytes_:
-                    response_data = result.value.bytes_.decode("utf-8")
-                    print("🟡 RAW RESPONSE:", response_data, flush=True)
+                if not (result.value and result.value.bytes_):
+                    continue
 
+                # 1) Decode the raw bytes
+                chunk = result.value.bytes_.decode("utf-8")
+                buffer += chunk
+
+                # 2) Try to peel off as many complete JSON objects as possible
+                idx = 0
+                while True:
                     try:
-                        json_data = json.loads(response_data)
-                        print("🟢 PARSED JSON:", json.dumps(json_data, indent=2), flush=True)
+                        obj, offset = decoder.raw_decode(buffer[idx:])
+                    except json.JSONDecodeError:
+                        break
+                    idx += offset
+                    # 3) Hand off each parsed object
+                    await self._handle_event(obj)
 
-                        if 'event' in json_data:
-                            if 'contentStart' in json_data['event']:
-                                content_start = json_data['event']['contentStart']
-                                self.role = content_start['role']
-                                if 'additionalModelFields' in content_start:
-                                    additional_fields = json.loads(content_start['additionalModelFields'])
-                                    self.display_assistant_text = (
-                                        additional_fields.get("generationStage") == "SPECULATIVE"
-                                    )
+                # 4) Keep only the unparsed tail
+                buffer = buffer[idx:]
 
-                            elif 'textOutput' in json_data['event']:
-                                text = json_data['event']['textOutput']['content']
-                                if self.role == "ASSISTANT":
-                                    print(f"Assistant: {text}", flush=True)
-                                    print(json.dumps({ "type": "text", "text": text }), flush=True)
-                                elif self.role == "USER":
-                                    print(f"User: {text}", flush=True)
-
-                            elif 'audioOutput' in json_data['event']:
-                                audio_content = json_data['event']['audioOutput']['content']
-                                audio_bytes = base64.b64decode(audio_content)
-                                await self.audio_queue.put(audio_bytes)
-                                print("🔊 AUDIO OUTPUT RECEIVED, size:", len(audio_bytes), flush=True)
-                                print(json.dumps({
-                                    "type": "audio",
-                                    "data": base64.b64encode(audio_bytes).decode("utf-8"),
-                                    "size": len(audio_bytes)
-                                }), flush=True)
-
-                    except Exception as e:
-                        print(f"❌ Failed to parse response: {e}", flush=True)
-                        print(f"❌ Raw data was: {response_data}", flush=True)
         except Exception as e:
             print(f"🔥 Error in _process_responses(): {e}", flush=True)
+
+    async def _handle_event(self, json_data):
+        """Dispatch one parsed JSON event to your existing logic."""
+        evt = json_data.get("event", {})
+        # contentStart
+        if "contentStart" in evt:
+            content_start = evt["contentStart"]
+            self.role = content_start.get("role")
+            # optional SPECULATIVE check
+            if "additionalModelFields" in content_start:
+                fields = json.loads(content_start["additionalModelFields"])
+                self.display_assistant_text = (fields.get("generationStage") == "SPECULATIVE")
+
+        # textOutput
+        elif "textOutput" in evt:
+            text = evt["textOutput"]["content"]
+            if self.role == "ASSISTANT":
+                print(f"Assistant: {text}", flush=True)
+                print(json.dumps({"type": "text", "text": text}), flush=True)
+            elif self.role == "USER":
+                print(f"User: {text}", flush=True)
+
+        # audioOutput
+        elif "audioOutput" in evt:
+            b64 = evt["audioOutput"]["content"]
+            audio_bytes = base64.b64decode(b64)
+            await self.audio_queue.put(audio_bytes)
+            print(json.dumps({
+                "type": "audio",
+                "data": b64,
+                "size": len(audio_bytes)
+            }), flush=True)
+
+        # else: ignore other event types
 
 async def handle_stdin(nova_client):
     reader = asyncio.StreamReader()
@@ -372,7 +363,8 @@ async def handle_stdin(nova_client):
 
 async def main():
     voice = os.getenv("VOICE_ID")
-    nova_client = NovaSonic(voice_id=voice)
+    session_id = os.getenv("SESSION_ID", "default")
+    nova_client = NovaSonic(voice_id=voice, session_id=session_id)
     
     # First listen for any initial configuration from stdin
     # This allows the frontend to set the voice before starting the session

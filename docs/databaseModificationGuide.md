@@ -4,7 +4,7 @@ This guide explains how to add a new table to the database in the Virtual Care I
 
 ## Adding a New Table
 
-To add a new table, you only need to modify the `migrations.py` file:
+To add a new tables/columns or alter/remove existing ones, you only need to modify the `migrations.py` file:
 
 1. Define a function that returns the SQL for your new table
 2. Register the migration in the `get_all_migrations()` function

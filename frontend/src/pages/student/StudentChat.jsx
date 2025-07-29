@@ -374,7 +374,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log(data);
+        console.log("Simulation group data:", data);
         const infoFiles = Object.entries(data.info_files).map(
           ([fileName, fileDetails]) => ({
             name: fileName,
@@ -691,6 +691,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       })
       .then((data) => {
         sessionData = data[0];
+        console.log("New session created:", sessionData.session_id);
         setCurrentSessionId(sessionData.session_id);
         setSessions((prevItems) => [...prevItems, sessionData]);
         setSession(sessionData);
@@ -705,6 +706,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         )}&patient_id=${encodeURIComponent(
           patient.patient_id
         )}&session_name=${encodeURIComponent("New chat")}`;
+
+        console.log("Session data for text generation:", sessionData);
 
         return fetch(textGenUrl, {
           method: "POST",
@@ -727,6 +730,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           textResponseData.llm_output,
           sessionData.session_id
         );
+        console.log("sessionData:", sessionData);
         return sessionData;
       })
       .catch((error) => {
@@ -1107,7 +1111,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               } else {
                 setShowVoiceOverlay(true);
                 fetchVoiceID().then((voice_id) => {
-                  startSpokenLLM(voice_id, setLoading);
+                  console.log("Session ID:", currentSessionId);
+                  startSpokenLLM(voice_id, setLoading, currentSessionId);
                 });
                 setIsRecording(true);
                 setLoading(true);
