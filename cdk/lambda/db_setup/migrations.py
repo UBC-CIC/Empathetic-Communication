@@ -197,6 +197,7 @@ def get_all_migrations():
         register_migration("add_empathy_flag", get_empathy_flag_sql())
         register_migration("update_feedback_table", get_update_feedback_table_sql())
         register_migration("add_patient_voice_column", get_patient_voice_column_sql())
+        register_migration("add_empathy_eval_column", get_empathy_eval_column_sql())
         # Add more migrations as needed
     
     # Create a new ordered dictionary with version numbers
