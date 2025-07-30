@@ -10,14 +10,15 @@ botocore = "*"
 langchain = "*"
 langchain-aws = "*"
 langchain-core = "*"
+langchain-community = "*"
+langchain-experimental = "*"
 langchain-postgres = "*"
 python-dotenv = "*"
 sqlalchemy = "*"
 pgvector = "*"
+PyMuPDF = "1.24.10"
 psycopg = {extras = ["binary", "pool"], version = "*"}
 psycopg2-binary = "*"
-PyMuPDF = "1.24.10"
-langchain-community = "*" 
 
 [build-system]
 requires = ["poetry-core"]
