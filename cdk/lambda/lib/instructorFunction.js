@@ -1404,6 +1404,8 @@ exports.handler = async (event) => {
                 `;
               } else {
                 // If no patient_id, get all empathy data for the student in this simulation group
+                // This retrieves empathy evaluations from messages where students have interacted with patients
+                // The data includes perspective-taking, emotional resonance, acknowledgment, and communication scores
                 empathyData = await sqlConnection`
                   SELECT m.empathy_evaluation
                   FROM "messages" m

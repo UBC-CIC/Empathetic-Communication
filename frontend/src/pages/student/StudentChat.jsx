@@ -1383,6 +1383,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       />
 
       {/* Empathy Coach Dialog */}
+      {/* This dialog displays empathy evaluation summary and scores for student performance */}
+      {/* It shows metrics like perspective-taking, emotional resonance, and communication effectiveness */}
       <Dialog
         open={isEmpathyCoachOpen}
         onClose={() => setIsEmpathyCoachOpen(false)}
