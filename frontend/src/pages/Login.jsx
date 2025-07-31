@@ -487,7 +487,6 @@ export const Login = () => {
                   display: 'block',
                   height: 'auto',
                   margin: '0 auto 20px',
-                  filter: 'brightness(0) invert(1)',
                   animation: 'float 3s ease-in-out infinite',
                 }}
               />

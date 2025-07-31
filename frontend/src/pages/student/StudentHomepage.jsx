@@ -338,74 +338,154 @@ export const StudentHomepage = ({ setGroup }) => {
                   </Typography>
                 </div>
               ) : (
-                <Grid container spacing={2} sx={{ width: "100%" }}>
-                  {groups.map((group, index) => (
-                    <Grid item xs={4} key={index}>
-                      <Card
-                        sx={{
-                          mb: 2,
-                          borderRadius: "16px",
-                          border: "1px solid #e5e7eb",
-                          backgroundColor: "white",
-                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-4px)",
-                            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
-                            borderColor: "#10b981",
-                          },
-                        }}
-                      >
-                        <CardContent sx={{ p: 3 }}>
-                          <Typography
-                            variant="h6"
-                            sx={{
-                              textAlign: "left",
-                              fontWeight: "700",
-                              fontSize: "1.25rem",
-                              color: "#1f2937",
-                              mb: 1,
-                            }}
-                          >
-                            {titleCase(group.group_name)}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: "#6b7280",
-                              fontSize: "0.875rem",
-                            }}
-                          >
-                            Simulation Group
-                          </Typography>
-                        </CardContent>
-                        <CardActions sx={{ justifyContent: "flex-end", p: 3, pt: 0 }}>
-                          <Button
-                            size="small"
-                            sx={{
-                              borderRadius: "8px",
-                              backgroundColor: "#10b981",
-                              color: "white",
-                              fontWeight: "600",
-                              textTransform: "none",
-                              px: 3,
-                              py: 1,
-                              fontSize: "0.875rem",
-                              transition: "all 0.2s ease-in-out",
-                              "&:hover": {
-                                backgroundColor: "#059669",
-                                transform: "translateY(-1px)",
+                <div className="w-full max-w-6xl mx-auto">
+                  <Grid container spacing={4} sx={{ width: "100%" }}>
+                    {groups.map((group, index) => (
+                      <Grid item xs={12} sm={6} lg={4} key={index}>
+                        <Card
+                          sx={{
+                            height: "100%",
+                            display: "flex",
+                            flexDirection: "column",
+                            borderRadius: "20px",
+                            border: "1px solid #e5e7eb",
+                            backgroundColor: "white",
+                            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+                            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                            cursor: "pointer",
+                            "&:hover": {
+                              transform: "translateY(-8px)",
+                              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+                              borderColor: "#10b981",
+                              "& .group-icon": {
+                                backgroundColor: "#10b981",
+                                color: "white",
                               },
+                              "& .continue-btn": {
+                                backgroundColor: "#059669",
+                                transform: "translateY(-2px)",
+                              },
+                            },
+                          }}
+                          onClick={() => enterGroup(group)}
+                        >
+                          {/* Card Header with Icon */}
+                          <Box
+                            sx={{
+                              p: 4,
+                              pb: 2,
+                              display: "flex",
+                              alignItems: "flex-start",
+                              justifyContent: "space-between",
                             }}
-                            onClick={() => enterGroup(group)}
                           >
-                            Continue
-                          </Button>
-                        </CardActions>
-                      </Card>
-                    </Grid>
-                  ))}
-                </Grid>
+                            <Box sx={{ flex: 1 }}>
+                              <Typography
+                                variant="h5"
+                                sx={{
+                                  fontWeight: "700",
+                                  fontSize: "1.5rem",
+                                  color: "#1f2937",
+                                  mb: 1,
+                                  lineHeight: "1.2",
+                                }}
+                              >
+                                {titleCase(group.group_name)}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  color: "#6b7280",
+                                  fontSize: "0.875rem",
+                                  fontWeight: "500",
+                                }}
+                              >
+                                Medical Simulation Group
+                              </Typography>
+                            </Box>
+                            <Box
+                              className="group-icon"
+                              sx={{
+                                width: 48,
+                                height: 48,
+                                borderRadius: "12px",
+                                backgroundColor: "#f3f4f6",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                transition: "all 0.3s ease",
+                                flexShrink: 0,
+                                ml: 2,
+                              }}
+                            >
+                              <svg
+                                width="24"
+                                height="24"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                style={{ color: "#6b7280" }}
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                                />
+                              </svg>
+                            </Box>
+                          </Box>
+
+                          {/* Card Content */}
+                          <Box sx={{ p: 4, pt: 0, flex: 1 }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: "#9ca3af",
+                                fontSize: "0.8rem",
+                                fontWeight: "500",
+                                mb: 3,
+                                lineHeight: "1.5",
+                              }}
+                            >
+                              Interactive AI-powered patient simulations for medical training and empathy development
+                            </Typography>
+                          </Box>
+
+                          {/* Card Footer */}
+                          <Box sx={{ p: 4, pt: 0 }}>
+                            <Button
+                              className="continue-btn"
+                              fullWidth
+                              variant="contained"
+                              sx={{
+                                borderRadius: "12px",
+                                backgroundColor: "#10b981",
+                                color: "white",
+                                fontWeight: "600",
+                                textTransform: "none",
+                                py: 1.5,
+                                fontSize: "0.875rem",
+                                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                                transition: "all 0.3s ease",
+                                "&:hover": {
+                                  backgroundColor: "#059669",
+                                  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+                                },
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                enterGroup(group);
+                              }}
+                            >
+                              Continue Training
+                            </Button>
+                          </Box>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </div>
               )}
             </Box>
           )}
