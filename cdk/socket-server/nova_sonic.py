@@ -334,6 +334,12 @@ class NovaSonic:
         # textOutput
         elif "textOutput" in evt:
             text = evt["textOutput"]["content"]
+            
+            # Filter only the specific interrupted JSON message
+            if text.strip() == '{"interrupted": true}':
+                print(f"Filtered interrupted message", flush=True)
+                return
+            
             if self.role == "ASSISTANT":
                 print(f"Assistant: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
@@ -342,10 +348,8 @@ class NovaSonic:
                 print(f"User: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
 
-
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
 
-        
             # Mirror to PostgreSQL
             try:
                 normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
@@ -391,6 +395,14 @@ async def handle_stdin(nova_client):
             elif msg["type"] == "end_audio":
                 print("🎬 Received end_audio signal", flush=True)
                 await nova_client.end_audio_input()
+            elif msg["type"] == "interrupt":
+                print("🛑 Received interrupt signal", flush=True)
+                nova_client.is_active = False
+                if nova_client.stream:
+                    try:
+                        await nova_client.stream.input_stream.close()
+                    except:
+                        pass
             elif msg["type"] == "set_voice":
                 voice_id = msg.get("voice_id")
                 print(f"🎭 Received voice change request: {voice_id}", flush=True)

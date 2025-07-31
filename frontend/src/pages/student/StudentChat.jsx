@@ -836,7 +836,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            message_content: 'say "hi"',
+            message_content: "introduce yourself briefly",
           }),
         });
       })
@@ -1025,6 +1025,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         });
 
         sortedData.forEach((message) => {
+          // Filter out initial message
+          if (message.message_content.trim() === "introduce yourself briefly") {
+            return;
+          }
+
           // Create a unique key combining content and sender type
           const contentKey = `${
             message.student_sent ? "student" : "ai"
@@ -1291,6 +1296,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 setIsRecording(false);
                 setShowVoiceOverlay(false);
                 setLoading(false);
+                setTimeout(() => getMessages(), 10);
               } else {
                 setShowVoiceOverlay(true);
                 fetchVoiceID().then((voice_id) => {
@@ -1456,6 +1462,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             setIsRecording(false);
             setShowVoiceOverlay(false);
             setLoading(false);
+            setTimeout(() => getMessages(), 10);
           }}
           className="fixed bottom-5 left-1/2 transform -translate-x-1/2 z-[3000] bg-white rounded-full w-16 h-16 flex items-center justify-center shadow-lg hover:bg-gray-200 transition"
         >
