@@ -14,6 +14,11 @@ import langchain_chat_history
 import psycopg2
 import uuid
 from datetime import datetime
+import logging  
+# Set up basic logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # Define a global connection (or manage it however you do for RDS)
 pg_conn = None
@@ -172,6 +177,7 @@ class NovaSonic:
             "type": "TEXT",
             "interactive": True,
             "role": "SYSTEM",
+            "interrupt": True,
             "textInputConfiguration": {
                 "mediaType": "text/plain"
             }
@@ -328,32 +334,27 @@ class NovaSonic:
         # textOutput
         elif "textOutput" in evt:
             text = evt["textOutput"]["content"]
+            
+            # Filter only the specific interrupted JSON message
+            if text.strip() == '{"interrupted": true}':
+                print(f"Filtered interrupted message", flush=True)
+                return
+            
             if self.role == "ASSISTANT":
                 print(f"Assistant: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
-                langchain_chat_history.add_message(self.session_id, "ai", text)
+
             elif self.role == "USER":
                 print(f"User: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
-                langchain_chat_history.add_message(self.session_id, "user", text)
-        
+
+            logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
+
             # Mirror to PostgreSQL
             try:
-                conn = get_pg_connection()
-                cursor = conn.cursor()
-                insert_query = """
-                    INSERT INTO messages (message_id, session_id, student_sent, message_content, time_sent)
-                    VALUES (%s, %s, %s, %s, %s);
-                """
-                cursor.execute(insert_query, (
-                    str(uuid.uuid4()),
-                    self.session_id,
-                    True if self.role == "USER" else False,
-                    text,
-                    datetime.utcnow()
-                ))
-                conn.commit()
-                cursor.close()
+                normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
+                langchain_chat_history.add_message(self.session_id, normalized_role, text)
+                logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")
             except Exception as e:
                 print(f"❌ Failed to insert message into PostgreSQL: {e}", flush=True)
 
@@ -394,6 +395,14 @@ async def handle_stdin(nova_client):
             elif msg["type"] == "end_audio":
                 print("🎬 Received end_audio signal", flush=True)
                 await nova_client.end_audio_input()
+            elif msg["type"] == "interrupt":
+                print("🛑 Received interrupt signal", flush=True)
+                nova_client.is_active = False
+                if nova_client.stream:
+                    try:
+                        await nova_client.stream.input_stream.close()
+                    except:
+                        pass
             elif msg["type"] == "set_voice":
                 voice_id = msg.get("voice_id")
                 print(f"🎭 Received voice change request: {voice_id}", flush=True)

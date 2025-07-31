@@ -236,7 +236,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         if (response.ok) {
           const data = await response.json();
           setSessions(data);
-          setSession(data[data.length - 1]);
+          const latestSession = data[data.length - 1];
+          setSession(latestSession);
+          if (latestSession) {
+            setCurrentSessionId(latestSession.session_id);
+          }
         } else {
           console.error("Failed to fetch patient:", response.statusText);
         }
@@ -1020,6 +1024,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         });
 
         sortedData.forEach((message) => {
+          // Filter out initial message
+          if (message.message_content.trim() === "introduce yourself briefly") {
+            return;
+          }
+
           // Create a unique key combining content and sender type
           const contentKey = `${
             message.student_sent ? "student" : "ai"
@@ -1056,6 +1065,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   };
   useEffect(() => {
     if (session) {
+      setCurrentSessionId(session.session_id);
       getMessages();
     }
   }, [session]);
@@ -1262,6 +1272,72 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {/* Mic Button (left side) */}
+          <button
+            onClick={() => {
+              if (isRecording) {
+                stopSpokenLLM();
+                setIsRecording(false);
+                setShowVoiceOverlay(false);
+                setLoading(false);
+                setTimeout(() => getMessages(), 10);
+              } else {
+                setShowVoiceOverlay(true);
+                fetchVoiceID().then((voice_id) => {
+                  console.log("Session ID:", currentSessionId);
+                  startSpokenLLM(voice_id, setLoading, currentSessionId);
+                });
+                setIsRecording(true);
+                setLoading(true);
+              }
+            }}
+            className={`ml-2 mr-2 transition duration-200 focus:outline-none hover:outline-none ${
+              isRecording
+                ? "text-red-600 hover:text-red-800"
+                : "text-gray-600 hover:text-black"
+            }`}
+            style={{ backgroundColor: "transparent", border: "none" }}
+          >
+            <MicIcon style={{ fontSize: 24 }} />
+          </button>
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            className="flex-grow text-lg outline-none bg-[#f2f0f0] text-black resize-none max-h-32 pt-4 leading-tight"
+            style={{ maxHeight: "8rem", lineHeight: "1.5rem" }}
+            maxLength={2096}
+          />
+
+          {/* Send Button (right side) */}
+          <img
+            onClick={handleSubmit}
+            className="cursor-pointer w-5 h-5 ml-3 mr-4"
+            src="./send.png"
+            alt="send"
+            style={{
+              filter:
+                "invert(58%) sepia(80%) saturate(600%) hue-rotate(100deg) brightness(90%) contrast(95%)",
+            }}
+          />
+        </div>
+        {/* Fixed Header */}
+        <div
+          className="bg-[#F8F9FD] fixed top-0 right-0 py-4 px-6 z-10"
+          style={{
+            width: `calc(100vw - ${sidebarWidth}px)`,
+            left: `${sidebarWidth}px`,
+          }}
+        >
+          <h1 className="text-2xl font-bold text-center text-[#212427]">
+            AI Patient
+          </h1>
+        </div>
+        {/* Move messages below the fixed header by adding a top margin equal to header height */}
+        <div
+          className="flex-grow overflow-y-auto p-4 h-full flex flex-col"
+          style={{ marginTop: "88px" }}
+        >
+
           {messages.map((message, index) =>
             message.student_sent ? (
               <StudentMessage
@@ -1287,10 +1363,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           )}
 
           {/* TypingIndicator */}
+
           {isAItyping && (
             <TypingIndicator patientName={patient?.patient_name} />
           )}
-
           <div ref={messagesEndRef} />
         </div>
 

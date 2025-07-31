@@ -358,7 +358,7 @@ def get_response(
         result["empathy_evaluation"] = empathy_evaluation
     
     # Save student message with empathy evaluation to PostgreSQL
-    if query.strip() and "Greet me" not in query:
+    if query.strip() and "Greet me" not in query and query.strip() != 'introduce yourself briefly' and query.strip() != 'say "hi"':
         save_message_to_db(session_id, True, query, empathy_evaluation)
     
     # Save AI response to PostgreSQL

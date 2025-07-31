@@ -76,6 +76,14 @@ export class EcsSocketStack extends Stack {
       })
     );
 
+    taskRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [db.secretPathUser.secretArn],
+      })
+    );
+
     // 3) Fargate task definition
     const taskDef = new ecs.FargateTaskDefinition(this, "SocketTaskDef", {
       cpu: 1024,

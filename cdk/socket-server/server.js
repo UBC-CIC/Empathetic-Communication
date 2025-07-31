@@ -19,6 +19,14 @@ app.get("/health", (req, res) => {
 // ─── Socket.IO Connection ─────────────────────────────────────────────────────
 io.on("connection", (socket) => {
   console.log("🔌 CLIENT CONNECTED:", socket.id);
+  console.log(
+    process.env.SM_DB_CREDENTIALS
+      ? "🔐 DB CREDENTIALS LOADED"
+      : "❌ NO DB CREDENTIALS"
+  );
+  console.log(
+    process.env.RDS_PROXY_ENDPOINT ? "🔐 RDS PROXY LOADED" : "❌ NO RDS PROXY"
+  );
 
   let novaProcess = null;
   let novaReady = false;

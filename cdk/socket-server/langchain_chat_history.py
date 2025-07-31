@@ -22,6 +22,8 @@ RDS_PROXY_ENDPOINT = os.environ.get("RDS_PROXY_ENDPOINT")  # Replace with your a
 DB_SECRET_NAME = os.environ.get("SM_DB_CREDENTIALS")  # Replace with your actual secret name
 print(f"Using RDS Proxy Endpoint: {RDS_PROXY_ENDPOINT}")
 print(f"Using DB Secret Name: {DB_SECRET_NAME}")
+logger.info(f"Using RDS Proxy Endpoint: {RDS_PROXY_ENDPOINT}")
+logger.info(f"Using DB Secret Name: {DB_SECRET_NAME}")
 
 def format_chat_history(session_id: str, table_name: str = "DynamoDB-Conversation-Table") -> str:
     history = DynamoDBChatMessageHistory(table_name=table_name, session_id=session_id)
@@ -45,9 +47,13 @@ def add_message(session_id: str, role: str, content: str, table_name: str = "Dyn
         raise ValueError(f"Invalid role '{role}'. Must be 'user' or 'ai'.")
 
     # Mirror to PostgreSQL
-    insert_message_to_postgres(session_id, role, content)
-
+    try:
+        insert_message_to_postgres(session_id, role, content)
     
+    except Exception as e:
+        logger.error(f"❌ Failed to insert message into PostgreSQL: {e}")
+
+
 def get_secret(secret_name, expect_json=True):
     global db_secret
     if db_secret is None:
@@ -106,5 +112,7 @@ def insert_message_to_postgres(session_id: str, role: str, content: str):
         logger.info(f"💾 Saved message to PostgreSQL (session_id={session_id}, role={role})")
 
     except Exception as e:
-        logger.error(f"❌ Failed to insert message into PostgreSQL: {e}")
+        logger.error(f"❌ Failed to insert message: {e}")
+        print(f"❌ Failed to insert message: {e}")
+        conn.rollback()
 
