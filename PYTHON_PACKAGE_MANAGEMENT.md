@@ -1,4 +1,4 @@
-# Package Management Guide
+# Python Package Management Guide
 
 This project uses **Poetry** for Python package management to ensure consistent, reproducible builds across all environments.
 

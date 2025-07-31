@@ -22,7 +22,7 @@ The following architecture diagram illustrates the various AWS components utiliz
 
 ## Package Management
 
-This project uses [Poetry](https://python-poetry.org/) for Python dependency management to ensure consistent, reproducible builds across all environments. See [PACKAGE_MANAGEMENT.md](./PACKAGE_MANAGEMENT.md) for complete setup instructions.
+This project uses [Poetry](https://python-poetry.org/) for Python dependency management to ensure consistent, reproducible builds across all environments. See [PYTHON_PACKAGE_MANAGEMENT.md](./PYTHON_PACKAGE_MANAGEMENT.md) for complete setup instructions.
 
 ### Quick Setup
 ```bash
