@@ -108,7 +108,7 @@ export class ApiGatewayStack extends cdk.Stack {
      */
     const psycopgLayer = new LayerVersion(this, "psycopgLambdaLayer", {
       code: Code.fromAsset("./layers/psycopg2.zip"),
-      compatibleRuntimes: [Runtime.PYTHON_3_9],
+      compatibleRuntimes: [Runtime.PYTHON_3_11],
       description: "Lambda layer containing the psycopg2 Python library",
     });
 
@@ -967,6 +967,7 @@ export class ApiGatewayStack extends cdk.Stack {
           BEDROCK_LLM_PARAM: bedrockLLMParameter.parameterName,
           EMBEDDING_MODEL_PARAM: embeddingModelParameter.parameterName,
           TABLE_NAME_PARAM: tableNameParameter.parameterName,
+          BEDROCK_GUARDRAIL_ID: "", // Optional: Leave empty to disable guardrails, add your guardrail ID to enable
         },
       }
     );
@@ -986,7 +987,11 @@ export class ApiGatewayStack extends cdk.Stack {
     // Custom policy statement for Bedrock access
     const bedrockPolicyStatement = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
-      actions: ["bedrock:InvokeModel", "bedrock:InvokeEndpoint"],
+      actions: [
+        "bedrock:InvokeModel", 
+        "bedrock:InvokeEndpoint",
+        "bedrock:ApplyGuardrail"  // Required for guardrails
+      ],
       resources: [
         "arn:aws:bedrock:" +
           this.region +
@@ -995,6 +1000,7 @@ export class ApiGatewayStack extends cdk.Stack {
           this.region +
           "::foundation-model/amazon.titan-embed-text-v2:0",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
+        `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`  // Guardrail access
       ],
     });
 
@@ -1074,7 +1080,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-GeneratePreSignedURLFunction`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/generatePreSignedURL"),
         handler: "generatePreSignedURL.lambda_handler",
         timeout: Duration.seconds(300),
@@ -1273,7 +1279,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-TimeoutHandlerLambda`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/timeoutHandler"),
         handler: "timeoutHandler.lambda_handler",
         timeout: Duration.seconds(300),
@@ -1312,7 +1318,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-GetFilesFunction`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/getFilesFunction"),
         handler: "getFilesFunction.lambda_handler",
         timeout: Duration.seconds(300),
@@ -1366,7 +1372,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-GetFilesFunctionStudent`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/getFilesFunction"),
         handler: "getFilesFunction.lambda_handler",
         timeout: Duration.seconds(300),
@@ -1420,7 +1426,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-GetProfilePictures`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/getProfilePictures"),
         handler: "getProfilePictures.lambda_handler",
         timeout: Duration.seconds(300),
@@ -1474,7 +1480,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-GetProfilePicturesStudent`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/getProfilePictures"),
         handler: "getProfilePictures.lambda_handler",
         timeout: Duration.seconds(300),
@@ -1525,7 +1531,7 @@ export class ApiGatewayStack extends cdk.Stack {
      * Create Lambda function to delete certain file
      */
     const deleteFile = new lambda.Function(this, `${id}-DeleteFileFunction`, {
-      runtime: lambda.Runtime.PYTHON_3_9,
+      runtime: lambda.Runtime.PYTHON_3_11,
       code: lambda.Code.fromAsset("lambda/deleteFile"),
       handler: "deleteFile.lambda_handler",
       timeout: Duration.seconds(300),
@@ -1577,7 +1583,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-DeletePatientFunction`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/deletePatient"),
         handler: "deletePatient.lambda_handler",
         timeout: Duration.seconds(300),
@@ -1615,7 +1621,7 @@ export class ApiGatewayStack extends cdk.Stack {
       this,
       `${id}-DeleteLastMessage`,
       {
-        runtime: lambda.Runtime.PYTHON_3_9,
+        runtime: lambda.Runtime.PYTHON_3_11,
         code: lambda.Code.fromAsset("lambda/deleteLastMessage"),
         handler: "deleteLastMessage.lambda_handler",
         timeout: Duration.seconds(300),
