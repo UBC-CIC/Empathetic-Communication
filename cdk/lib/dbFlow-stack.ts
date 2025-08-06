@@ -15,8 +15,12 @@ export class DBFlowStack extends Stack {
     constructor(scope: Construct, id: string, vpcStack: VpcStack, db: DatabaseStack, apiStack: ApiGatewayStack, props?: StackProps) {
         super(scope, id, props);
 
-        // Use shared psycopg2 layer from API stack
-        const psycopgLambdaLayer = apiStack.getLayers()['psycopg2'];
+        // Create psycopg2 layer directly in this stack to avoid export dependency
+        const psycopgLambdaLayer = new lambda.LayerVersion(this, 'psycopgLambdaLayer', {
+            code: lambda.Code.fromAsset('./layers/psycopg2.zip'),
+            compatibleRuntimes: [lambda.Runtime.PYTHON_3_11],
+            description: 'Lambda layer containing the psycopg2 Python library',
+        });
 
         // Create IAM role for Lambda within the VPC
         const lambdaRole = new iam.Role(this, `${id}-lambda-vpc-role`, {
