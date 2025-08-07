@@ -29,8 +29,9 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
+import * as appsync from "aws-cdk-lib/aws-appsync";
 
-export class ApiGatewayStack extends cdk.Stack {
+export class ApiServiceStack extends cdk.Stack {
   private readonly api: apigateway.SpecRestApi;
   public readonly appClient: cognito.UserPoolClient;
   public readonly userPool: cognito.UserPool;
@@ -39,6 +40,7 @@ export class ApiGatewayStack extends cdk.Stack {
   public readonly stageARN_APIGW: string;
   public readonly apiGW_basedURL: string;
   public readonly secret: secretsmanager.ISecret;
+  public readonly appSyncApi: appsync.GraphqlApi;
   public getEndpointUrl = () => this.api.url;
   public getUserPoolId = () => this.userPool.userPoolId;
   public getUserPoolClientId = () => this.appClient.userPoolClientId;
@@ -970,6 +972,60 @@ export class ApiGatewayStack extends cdk.Stack {
       }
     );
 
+    // Create AppSync API for text streaming
+    this.appSyncApi = new appsync.GraphqlApi(this, 'TextStreamingApi', {
+      name: 'text-streaming-api',
+      schema: appsync.SchemaFile.fromAsset('lib/schema.graphql'),
+      authorizationConfig: {
+        defaultAuthorization: {
+          authorizationType: appsync.AuthorizationType.USER_POOL,
+          userPoolConfig: {
+            userPool: this.userPool,
+          },
+        },
+        additionalAuthorizationModes: [{
+          authorizationType: appsync.AuthorizationType.IAM,
+        }],
+      },
+    });
+
+    // Create None data source for local resolvers
+    const noneDataSource = this.appSyncApi.addNoneDataSource('NoneDataSource');
+
+    // Mutation resolver for publishing text streams
+    noneDataSource.createResolver('PublishTextStreamResolver', {
+      typeName: 'Mutation',
+      fieldName: 'publishTextStream',
+      requestMappingTemplate: appsync.MappingTemplate.fromString(`
+        {
+          "version": "2017-02-28",
+          "payload": {
+            "sessionId": "$ctx.args.sessionId",
+            "data": "$ctx.args.data"
+          }
+        }
+      `),
+      responseMappingTemplate: appsync.MappingTemplate.fromString(`
+        {
+          "sessionId": "$ctx.args.sessionId",
+          "data": "$ctx.args.data"
+        }
+      `),
+    });
+
+
+
+    // Output the API URL and ID
+    new cdk.CfnOutput(this, 'AppSyncApiUrl', {
+      value: this.appSyncApi.graphqlUrl,
+    });
+
+    new cdk.CfnOutput(this, 'AppSyncApiId', {
+      value: this.appSyncApi.apiId,
+    });
+
+
+
 
 
     /**
@@ -993,7 +1049,8 @@ export class ApiGatewayStack extends cdk.Stack {
           EMBEDDING_MODEL_PARAM: embeddingModelParameter.parameterName,
           TABLE_NAME_PARAM: tableNameParameter.parameterName,
           BEDROCK_GUARDRAIL_ID: "", // Optional: Leave empty to disable guardrails, add your guardrail ID to enable
-          APPSYNC_URL_PARAM: `/EC-Api/VCI/AppSyncUrl`,
+          APPSYNC_GRAPHQL_URL: this.appSyncApi.graphqlUrl,
+          APPSYNC_API_ID: this.appSyncApi.apiId,
         },
       }
     );
@@ -1073,23 +1130,29 @@ export class ApiGatewayStack extends cdk.Stack {
           bedrockLLMParameter.parameterArn,
           embeddingModelParameter.parameterArn,
           tableNameParameter.parameterArn,
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/EC-Api/VCI/AppSyncUrl`,
+
         ],
       })
     );
 
-    // Grant access to AppSync for streaming
+    // Grant access to AppSync for streaming with comprehensive permissions
     textGenLambdaDockerFunc.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
-          "appsync:GraphQL"
+          "appsync:GraphQL",
+          "appsync:GetGraphqlApi",
+          "appsync:ListGraphqlApis"
         ],
         resources: [
-          `arn:aws:appsync:${this.region}:${this.account}:apis/*`
+          this.appSyncApi.arn,
+          this.appSyncApi.arn + "/*",
+          this.appSyncApi.arn + "/types/Mutation/fields/publishTextStream"
         ],
       })
     );
+
+
 
     // Create S3 Bucket to handle documents for each simulation group
     const dataIngestionBucket = new s3.Bucket(
@@ -1782,16 +1845,5 @@ export class ApiGatewayStack extends cdk.Stack {
     );
   }
 
-  public grantAppSyncAccess(appSyncApi: any) {
-    const textGenLambda = this.node.findChild('EC-Api-TextGenLambdaDockerFunction') as lambda.DockerImageFunction;
-    if (textGenLambda) {
-      textGenLambda.addToRolePolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["appsync:GraphQL"],
-          resources: [appSyncApi.arn + "/*"],
-        })
-      );
-    }
-  }
+
 }

@@ -20,7 +20,7 @@ RDS_PROXY_ENDPOINT = os.environ["RDS_PROXY_ENDPOINT"]
 BEDROCK_LLM_PARAM = os.environ["BEDROCK_LLM_PARAM"]
 EMBEDDING_MODEL_PARAM = os.environ["EMBEDDING_MODEL_PARAM"]
 TABLE_NAME_PARAM = os.environ["TABLE_NAME_PARAM"]
-APPSYNC_URL_PARAM = os.environ.get("APPSYNC_URL_PARAM", "")
+APPSYNC_GRAPHQL_URL = os.environ.get("APPSYNC_GRAPHQL_URL", "")
 
 # AWS Clients
 secrets_manager_client = boto3.client("secretsmanager")
@@ -65,16 +65,11 @@ def get_parameter(param_name, cached_var):
             raise
     return cached_var
 
-# Cached AppSync URL
-APPSYNC_GRAPHQL_URL = None
-
 def initialize_constants():
-    global BEDROCK_LLM_ID, EMBEDDING_MODEL_ID, TABLE_NAME, APPSYNC_GRAPHQL_URL, embeddings
+    global BEDROCK_LLM_ID, EMBEDDING_MODEL_ID, TABLE_NAME, embeddings
     BEDROCK_LLM_ID = get_parameter(BEDROCK_LLM_PARAM, BEDROCK_LLM_ID)
     EMBEDDING_MODEL_ID = get_parameter(EMBEDDING_MODEL_PARAM, EMBEDDING_MODEL_ID)
     TABLE_NAME = get_parameter(TABLE_NAME_PARAM, TABLE_NAME)
-    if APPSYNC_URL_PARAM:
-        APPSYNC_GRAPHQL_URL = get_parameter(APPSYNC_URL_PARAM, APPSYNC_GRAPHQL_URL)
 
     if embeddings is None:
         embeddings = BedrockEmbeddings(
@@ -189,7 +184,30 @@ def get_patient_details(patient_id):
 
 def handler(event, context):
     logger.info("Text Generation Lambda function is called!")
+    logger.info(f"📝 Event headers: {event.get('headers', {})}")
     initialize_constants()
+    
+    # Extract the user's Cognito token from the API Gateway event
+    auth_token = None
+    if 'headers' in event:
+        headers = event['headers']
+        auth_token = headers.get('Authorization') or headers.get('authorization')
+        logger.info(f"🔍 Found headers: {list(headers.keys())}")
+    
+    if auth_token:
+        logger.info(f"🎫 Raw auth token: {auth_token[:30]}...")
+        # Extract JWT token from Bearer format if present
+        if auth_token.startswith('Bearer '):
+            jwt_token = auth_token[7:]  # Remove 'Bearer ' prefix
+        else:
+            jwt_token = auth_token
+        
+        # Store the JWT token for AppSync authentication
+        from helpers.chat import get_cognito_token
+        get_cognito_token.current_token = jwt_token
+        logger.info(f"✅ Cognito JWT token extracted and stored: {jwt_token[:20]}...")
+    else:
+        logger.warning(f"❌ No Authorization header found. Available headers: {list(headers.keys()) if 'headers' in locals() else 'No headers'}")
 
     query_params = event.get("queryStringParameters", {})
     simulation_group_id = query_params.get("simulation_group_id", "")

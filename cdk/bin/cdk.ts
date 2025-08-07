@@ -2,8 +2,8 @@
 import "source-map-support/register";
 import * as cdk from "aws-cdk-lib";
 import { AmplifyStack } from "../lib/amplify-stack";
-import { ApiGatewayStack } from "../lib/api-gateway-stack";
-import { AppSyncStack } from "../lib/appsync-stack";
+import { ApiServiceStack } from "../lib/api-service-stack";
+
 import { DatabaseStack } from "../lib/database-stack";
 import { DBFlowStack } from "../lib/dbFlow-stack";
 import { VpcStack } from "../lib/vpc-stack";
@@ -21,7 +21,7 @@ const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, { env });
 const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, {
   env,
 });
-const apiStack = new ApiGatewayStack(
+const apiStack = new ApiServiceStack(
   app,
   `${StackPrefix}-Api`,
   dbStack,
@@ -45,20 +45,13 @@ const dbFlowStack = new DBFlowStack(
   apiStack,
   { env }
 );
-const appSyncStack = new AppSyncStack(
-  app,
-  `${StackPrefix}-AppSync`,
-  apiStack,
-  {
-    env,
-  }
-);
+
 const amplifyStack = new AmplifyStack(
   app,
   `${StackPrefix}-Amplify`,
   apiStack,
   ecsSocketStack,
-  appSyncStack,
+  apiStack, // Pass apiStack instead of appSyncStack since AppSync is now part of it
   {
     env,
   }

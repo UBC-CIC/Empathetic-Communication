@@ -19,7 +19,7 @@ export class EcsSocketStack extends Stack {
     id: string,
     vpcStack: VpcStack,
     db: DatabaseStack,
-    apiGatewayStack: any,
+    apiServiceStack: any,
     props?: StackProps
   ) {
     super(scope, id, props);
@@ -96,7 +96,7 @@ export class EcsSocketStack extends Stack {
         actions: ["secretsmanager:GetSecretValue"],
         resources: [
           db.secretPathUser.secretArn,
-          apiGatewayStack.secret.secretArn
+          apiServiceStack.secret.secretArn
         ],
       })
     );
@@ -120,12 +120,12 @@ export class EcsSocketStack extends Stack {
       environment: {
         NODE_ENV: "production",
         SM_DB_CREDENTIALS: db.secretPathUser.secretName,
-        SM_COGNITO_CREDENTIALS: apiGatewayStack.secret.secretName,
+        SM_COGNITO_CREDENTIALS: apiServiceStack.secret.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         AWS_REGION: this.region,
-        COGNITO_USER_POOL_ID: apiGatewayStack.getUserPoolId(),
-        COGNITO_CLIENT_ID: apiGatewayStack.getUserPoolClientId(),
-        IDENTITY_POOL_ID: apiGatewayStack.getIdentityPoolId(),
+        COGNITO_USER_POOL_ID: apiServiceStack.getUserPoolId(),
+        COGNITO_CLIENT_ID: apiServiceStack.getUserPoolClientId(),
+        IDENTITY_POOL_ID: apiServiceStack.getIdentityPoolId(),
       },
     });
 

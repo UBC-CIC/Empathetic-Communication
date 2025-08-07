@@ -533,28 +533,43 @@ def generate_streaming_response(conversational_rag_chain: object, query: str, se
         publish_to_appsync(session_id, {'type': 'error', 'content': error_msg})
         return error_msg
 
+def get_cognito_token():
+    """
+    Get the current user's Cognito JWT token from the Lambda event context.
+    For AMAZON_COGNITO_USER_POOLS authentication, we need the raw JWT token.
+    """
+    import os
+    
+    # The token should be passed from the API Gateway event
+    # This will be set by the calling function
+    token = getattr(get_cognito_token, 'current_token', None)
+    if token:
+        logger.info(f"✅ Found Cognito JWT token: {token[:20]}...")
+        # For User Pool auth, ensure we have the Bearer token format
+        if not token.startswith('Bearer '):
+            token = f'Bearer {token}'
+        return token
+    else:
+        logger.error("❌ No Cognito token available in context")
+        logger.error(f"Token attribute exists: {hasattr(get_cognito_token, 'current_token')}")
+        return None
+
 def publish_to_appsync(session_id: str, data: dict):
     """
-    Publish streaming data to AppSync subscription.
+    Publish streaming data to AppSync subscription using Cognito User Pool authentication.
     """
     import requests
     import json
     import os
-    import boto3
-    from botocore.auth import SigV4Auth
-    from botocore.awsrequest import AWSRequest
-    
-    # Import the global variable from main module
-    from main import APPSYNC_GRAPHQL_URL
     
     try:
         logger.info(f"📡 Publishing to AppSync for session: {session_id}, data type: {data.get('type')}")
         
-        if not APPSYNC_GRAPHQL_URL:
-            logger.error("AppSync GraphQL URL not available")
+        appsync_url = os.environ.get('APPSYNC_GRAPHQL_URL')
+        if not appsync_url:
+            logger.error("AppSync GraphQL URL not available in environment")
             return
             
-        appsync_url = APPSYNC_GRAPHQL_URL
         logger.info(f"🔗 Using AppSync URL: {appsync_url}")
             
         mutation = """
@@ -574,18 +589,26 @@ def publish_to_appsync(session_id: str, data: dict):
             }
         }
         
-        # Create signed request for AppSync using IAM
-        session = boto3.Session()
-        credentials = session.get_credentials()
-        region = os.environ.get('REGION', 'us-east-1')
+        # Get Cognito JWT token for User Pool authentication
+        token = get_cognito_token()
+        if not token:
+            logger.error("No Cognito token available for AppSync authentication")
+            return
+            
+        # For AMAZON_COGNITO_USER_POOLS auth, use the JWT token with Bearer prefix
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': token  # Already formatted as 'Bearer <jwt_token>'
+        }
         
-        request = AWSRequest(method='POST', url=appsync_url, data=json.dumps(payload), headers={'Content-Type': 'application/json'})
-        SigV4Auth(credentials, 'appsync', region).add_auth(request)
+        logger.info(f"🔑 Using Cognito User Pool token for authentication")
         
-        response = requests.post(appsync_url, data=request.body, headers=dict(request.headers))
+        response = requests.post(appsync_url, data=json.dumps(payload), headers=headers)
         
         if response.status_code != 200:
             logger.error(f"AppSync publish failed: {response.status_code} {response.text}")
+            logger.error(f"Request payload: {json.dumps(payload, indent=2)}")
         else:
             logger.info(f"✅ AppSync publish successful for session: {session_id}")
             logger.info(f"📝 Response: {response.text[:200]}...")

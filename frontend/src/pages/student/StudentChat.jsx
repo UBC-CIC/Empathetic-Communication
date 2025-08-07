@@ -97,6 +97,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingKey, setStreamingKey] = useState(0);
 
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
   const [isInfoLoading, setIsInfoLoading] = useState(false);
@@ -489,7 +490,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   // Handle AppSync streaming response
   const handleStreamingResponse = async (url, authToken, message) => {
     setIsStreaming(true);
-    setStreamingMessage("");
+    setStreamingMessage(" "); // Start with space to show component
+    setIsAItyping(false); // Stop typing indicator when streaming starts
     let fullResponse = "";
 
     try {
@@ -526,17 +528,29 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             console.log("📡 AppSync data received:", data);
             const streamData = JSON.parse(data.onTextStream.data);
             console.log("📦 Parsed stream data:", streamData);
+            
+            // Process the stream data immediately
+            try {
 
             if (streamData.type === "empathy") {
               console.log("🧠 Empathy feedback:", streamData.content);
+            } else if (streamData.type === "start") {
+              console.log("🚀 Stream started");
+              setStreamingMessage(" "); // Start with space to show component
             } else if (streamData.type === "chunk") {
               console.log("📝 AppSync chunk:", streamData.content);
               fullResponse += streamData.content;
-              setStreamingMessage((prev) => prev + streamData.content);
+              // Force immediate update
+              setStreamingMessage((prev) => {
+                const newMessage = (prev === " " ? "" : prev) + streamData.content;
+                console.log("📝 Updating streaming message:", newMessage.length, "chars");
+                setStreamingKey(k => k + 1); // Force re-render
+                return newMessage;
+              });
             } else if (streamData.type === "end") {
               console.log("✅ AppSync stream complete");
               setIsStreaming(false);
-              setStreamingMessage("");
+              // Don't clear streaming message immediately, let retrieveKnowledgeBase handle it
               retrieveKnowledgeBase(fullResponse, session.session_id);
               subscription.unsubscribe();
             } else if (streamData.type === "error") {
@@ -544,6 +558,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               setIsStreaming(false);
               setStreamingMessage("");
               subscription.unsubscribe();
+            }
+            
+            } catch (error) {
+              console.error("Error processing stream data:", error);
             }
           },
           error: (error) => {
@@ -685,8 +703,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           if (!messageExists) {
             console.log("Adding new AI message to chat");
             setNewMessage(data[0]);
+            setStreamingMessage(""); // Clear streaming message after adding to chat
           } else {
             console.log("Duplicate AI message detected, not adding to chat");
+            setStreamingMessage(""); // Clear streaming message
           }
         } else {
           console.error("Failed to retrieve message:", response.statusText);
@@ -1389,7 +1409,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Streaming Message Display */}
           {isStreaming && (
             <AIMessage
-              message={streamingMessage || "..."}
+              key={`streaming-${streamingKey}`}
+              message={streamingMessage || ""}
               profilePicture={profilePicture}
               name={patient?.patient_name}
               isStreaming={true}

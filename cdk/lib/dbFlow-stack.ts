@@ -9,10 +9,10 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 // Stack import
 import { VpcStack } from './vpc-stack';
 import { DatabaseStack } from './database-stack';
-import { ApiGatewayStack } from './api-gateway-stack';
+import { ApiServiceStack } from './api-service-stack';
 
 export class DBFlowStack extends Stack {
-    constructor(scope: Construct, id: string, vpcStack: VpcStack, db: DatabaseStack, apiStack: ApiGatewayStack, props?: StackProps) {
+    constructor(scope: Construct, id: string, vpcStack: VpcStack, db: DatabaseStack, apiStack: ApiServiceStack, props?: StackProps) {
         super(scope, id, props);
 
         // Create psycopg2 layer directly in this stack to avoid export dependency
