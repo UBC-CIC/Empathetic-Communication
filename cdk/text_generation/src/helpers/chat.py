@@ -545,13 +545,9 @@ def get_cognito_token():
     token = getattr(get_cognito_token, 'current_token', None)
     if token:
         logger.info(f"✅ Found Cognito JWT token: {token[:20]}...")
-        # For User Pool auth, ensure we have the Bearer token format
-        if not token.startswith('Bearer '):
-            token = f'Bearer {token}'
         return token
     else:
         logger.error("❌ No Cognito token available in context")
-        logger.error(f"Token attribute exists: {hasattr(get_cognito_token, 'current_token')}")
         return None
 
 def publish_to_appsync(session_id: str, data: dict):

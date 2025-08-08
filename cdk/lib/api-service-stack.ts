@@ -48,7 +48,7 @@ export class ApiServiceStack extends cdk.Stack {
   public addLayer = (name: string, layer: LayerVersion) =>
     (this.layerList[name] = layer);
   public getLayers = () => this.layerList;
-  
+
   constructor(
     scope: Construct,
     id: string,
@@ -973,9 +973,9 @@ export class ApiServiceStack extends cdk.Stack {
     );
 
     // Create AppSync API for text streaming
-    this.appSyncApi = new appsync.GraphqlApi(this, 'TextStreamingApi', {
-      name: 'text-streaming-api',
-      schema: appsync.SchemaFile.fromAsset('lib/schema.graphql'),
+    this.appSyncApi = new appsync.GraphqlApi(this, "TextStreamingApi", {
+      name: "text-streaming-api",
+      schema: appsync.SchemaFile.fromAsset("lib/schema.graphql"),
       authorizationConfig: {
         defaultAuthorization: {
           authorizationType: appsync.AuthorizationType.USER_POOL,
@@ -983,50 +983,41 @@ export class ApiServiceStack extends cdk.Stack {
             userPool: this.userPool,
           },
         },
-        additionalAuthorizationModes: [{
-          authorizationType: appsync.AuthorizationType.IAM,
-        }],
+        additionalAuthorizationModes: [
+          {
+            authorizationType: appsync.AuthorizationType.IAM,
+          },
+        ],
       },
     });
 
     // Create None data source for local resolvers
-    const noneDataSource = this.appSyncApi.addNoneDataSource('NoneDataSource');
+    const noneDataSource = this.appSyncApi.addNoneDataSource("NoneDataSource");
 
     // Mutation resolver for publishing text streams
-    noneDataSource.createResolver('PublishTextStreamResolver', {
-      typeName: 'Mutation',
-      fieldName: 'publishTextStream',
+    noneDataSource.createResolver("PublishTextStreamResolver", {
+      typeName: "Mutation",
+      fieldName: "publishTextStream",
       requestMappingTemplate: appsync.MappingTemplate.fromString(`
-        {
-          "version": "2017-02-28",
-          "payload": {
-            "sessionId": "$ctx.args.sessionId",
-            "data": "$ctx.args.data"
-          }
-        }
-      `),
+  {
+    "version": "2018-05-29",
+    "payload": {}
+  }`),
       responseMappingTemplate: appsync.MappingTemplate.fromString(`
-        {
-          "sessionId": "$ctx.args.sessionId",
-          "data": "$ctx.args.data"
-        }
-      `),
+  $util.toJson({
+    "sessionId": $ctx.args.sessionId,
+    "data": $ctx.args.data
+  })`),
     });
 
-
-
     // Output the API URL and ID
-    new cdk.CfnOutput(this, 'AppSyncApiUrl', {
+    new cdk.CfnOutput(this, "AppSyncApiUrl", {
       value: this.appSyncApi.graphqlUrl,
     });
 
-    new cdk.CfnOutput(this, 'AppSyncApiId', {
+    new cdk.CfnOutput(this, "AppSyncApiId", {
       value: this.appSyncApi.apiId,
     });
-
-
-
-
 
     /**
      *
@@ -1071,10 +1062,10 @@ export class ApiServiceStack extends cdk.Stack {
     const bedrockPolicyStatement = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
-        "bedrock:InvokeModel", 
-        "bedrock:InvokeModelWithResponseStream",  // Required for streaming
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream", // Required for streaming
         "bedrock:InvokeEndpoint",
-        "bedrock:ApplyGuardrail"  // Required for guardrails
+        "bedrock:ApplyGuardrail", // Required for guardrails
       ],
       resources: [
         "arn:aws:bedrock:" +
@@ -1084,7 +1075,7 @@ export class ApiServiceStack extends cdk.Stack {
           this.region +
           "::foundation-model/amazon.titan-embed-text-v2:0",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
-        `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`  // Guardrail access
+        `arn:aws:bedrock:${this.region}:${this.account}:guardrail/*`, // Guardrail access
       ],
     });
 
@@ -1130,7 +1121,6 @@ export class ApiServiceStack extends cdk.Stack {
           bedrockLLMParameter.parameterArn,
           embeddingModelParameter.parameterArn,
           tableNameParameter.parameterArn,
-
         ],
       })
     );
@@ -1142,17 +1132,15 @@ export class ApiServiceStack extends cdk.Stack {
         actions: [
           "appsync:GraphQL",
           "appsync:GetGraphqlApi",
-          "appsync:ListGraphqlApis"
+          "appsync:ListGraphqlApis",
         ],
         resources: [
           this.appSyncApi.arn,
           this.appSyncApi.arn + "/*",
-          this.appSyncApi.arn + "/types/Mutation/fields/publishTextStream"
+          this.appSyncApi.arn + "/types/Mutation/fields/publishTextStream",
         ],
       })
     );
-
-
 
     // Create S3 Bucket to handle documents for each simulation group
     const dataIngestionBucket = new s3.Bucket(
@@ -1786,8 +1774,6 @@ export class ApiServiceStack extends cdk.Stack {
       })
     );
 
-
-
     // Waf Firewall
     const waf = new wafv2.CfnWebACL(this, `${id}-waf`, {
       description: "VCI waf",
@@ -1844,6 +1830,4 @@ export class ApiServiceStack extends cdk.Stack {
       }
     );
   }
-
-
 }

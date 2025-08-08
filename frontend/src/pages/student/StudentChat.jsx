@@ -97,6 +97,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // Log streamingMessage changes
+  useEffect(() => {
+    console.log(
+      "🔄 STREAMING MESSAGE STATE CHANGED:",
+      streamingMessage,
+      "Length:",
+      streamingMessage.length
+    );
+  }, [streamingMessage]);
   const [streamingKey, setStreamingKey] = useState(0);
 
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
@@ -528,38 +538,53 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             console.log("📡 AppSync data received:", data);
             const streamData = JSON.parse(data.onTextStream.data);
             console.log("📦 Parsed stream data:", streamData);
-            
+            console.log(
+              "TESTMES",
+              data.onTextStream.data,
+              "(current placeholder message will be updated in state)"
+            );
+
             // Process the stream data immediately
             try {
-
-            if (streamData.type === "empathy") {
-              console.log("🧠 Empathy feedback:", streamData.content);
-            } else if (streamData.type === "start") {
-              console.log("🚀 Stream started");
-              setStreamingMessage(" "); // Start with space to show component
-            } else if (streamData.type === "chunk") {
-              console.log("📝 AppSync chunk:", streamData.content);
-              fullResponse += streamData.content;
-              // Force immediate update
-              setStreamingMessage((prev) => {
-                const newMessage = (prev === " " ? "" : prev) + streamData.content;
-                console.log("📝 Updating streaming message:", newMessage.length, "chars");
-                setStreamingKey(k => k + 1); // Force re-render
-                return newMessage;
-              });
-            } else if (streamData.type === "end") {
-              console.log("✅ AppSync stream complete");
-              setIsStreaming(false);
-              // Don't clear streaming message immediately, let retrieveKnowledgeBase handle it
-              retrieveKnowledgeBase(fullResponse, session.session_id);
-              subscription.unsubscribe();
-            } else if (streamData.type === "error") {
-              console.error("❌ AppSync error:", streamData.content);
-              setIsStreaming(false);
-              setStreamingMessage("");
-              subscription.unsubscribe();
-            }
-            
+              if (streamData.type === "empathy") {
+                console.log("🧠 Empathy feedback:", streamData.content);
+              } else if (streamData.type === "start") {
+                console.log("🚀 Stream started");
+                console.log("🔄 Setting streaming message to space");
+                setStreamingMessage(" "); // Start with space to show component
+              } else if (streamData.type === "chunk") {
+                console.log("📝 AppSync chunk:", streamData.content);
+                fullResponse += streamData.content;
+                // Force immediate update
+                setStreamingMessage((prev) => {
+                  const newMessage =
+                    (prev === " " ? "" : prev) + streamData.content;
+                  console.log(
+                    "📝 STREAMING MESSAGE UPDATE:",
+                    "Previous:",
+                    prev,
+                    "Adding:",
+                    streamData.content,
+                    "New:",
+                    newMessage,
+                    "Length:",
+                    newMessage.length
+                  );
+                  setStreamingKey((k) => k + 1); // Force re-render
+                  return newMessage;
+                });
+              } else if (streamData.type === "end") {
+                console.log("✅ AppSync stream complete");
+                setIsStreaming(false);
+                // Don't clear streaming message immediately, let retrieveKnowledgeBase handle it
+                retrieveKnowledgeBase(fullResponse, session.session_id);
+                subscription.unsubscribe();
+              } else if (streamData.type === "error") {
+                console.error("❌ AppSync error:", streamData.content);
+                setIsStreaming(false);
+                setStreamingMessage("");
+                subscription.unsubscribe();
+              }
             } catch (error) {
               console.error("Error processing stream data:", error);
             }
