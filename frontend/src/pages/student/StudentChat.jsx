@@ -15,6 +15,7 @@ import {
   startSpokenLLM,
   stopSpokenLLM,
   playAudio,
+  stopAudioPlayback,
 } from "../../utils/voiceStream";
 
 import { signOut } from "aws-amplify/auth";
@@ -98,7 +99,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isInfoLoading, setIsInfoLoading] = useState(false);
   const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
-  const [profilePicture, setProfilePicture] = useState({});
+  const [profilePicture, setProfilePicture] = useState(null);
 
   const navigate = useNavigate();
 
@@ -427,7 +428,15 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           })
         );
         const profilePicture = data.profile_picture_url;
-        setProfilePicture(profilePicture);
+        console.log("Profile picture data:", profilePicture);
+        // Handle different data structures for profile picture
+        const profileUrl =
+          typeof profilePicture === "string"
+            ? profilePicture
+            : profilePicture?.url ||
+              profilePicture?.profile_picture_url ||
+              null;
+        setProfilePicture(profileUrl || null);
         setPatientInfoFiles(infoFiles);
         setAnswerKeyFiles(answerKeyFiles);
       } else {
@@ -1513,9 +1522,34 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       {showVoiceOverlay && (
         <>
           <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-white bg-opacity-95 backdrop-blur-lg">
+            {/* Loading state while mic initializes */}
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm z-[3002]">
+                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center space-y-4">
+                  <l-mirage size="48" speed="2.5" color="#10b981" />
+                  <div className="text-center">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                      Preparing microphone...
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Setting up voice stream
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="text-center">
-              <div className="w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <MicIcon className="w-16 h-16 text-emerald-600" />
+              <div className="relative z-[3001] w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 overflow-hidden shadow-lg">
+                {profilePicture ? (
+                  <img
+                    src={profilePicture}
+                    alt={patient?.patient_name}
+                    className="relative z-[3001] w-32 h-32 object-cover"
+                    onError={() => setProfilePicture(null)}
+                  />
+                ) : (
+                  <MicIcon className="relative z-[3001] w-16 h-16 text-emerald-600" />
+                )}
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
                 Voice Mode Active
@@ -1524,7 +1558,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 Speak naturally to interact with the AI patient
               </p>
 
-              {/* Animated voice waves */}
+              {/* Animated voice waves - render immediately even before audio starts */}
               <div className="flex justify-center space-x-1 mb-8">
                 {[...Array(5)].map((_, i) => (
                   <div
@@ -1533,12 +1567,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                     style={{
                       height: Math.random() * 30 + 20 + "px",
                       animationDelay: i * 0.1 + "s",
+                      opacity: loading ? 0.5 : 1,
                     }}
                   />
                 ))}
               </div>
             </div>
 
+            {/* Visualizer canvas kept visible at all times while overlay is open */}
             <canvas
               id="audio-visualizer"
               width={window.innerWidth}
@@ -1550,6 +1586,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           {/* Close button */}
           <button
             onClick={() => {
+              // 3) Immediately stop any audio playback
+              stopAudioPlayback();
+              // Stop mic/stream
               stopSpokenLLM();
               setIsRecording(false);
               setShowVoiceOverlay(false);

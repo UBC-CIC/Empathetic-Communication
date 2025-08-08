@@ -12,6 +12,10 @@ let dataArray;
 let animationId;
 let novaStartListenerAttached = false;
 
+// Track last playback to allow immediate stop
+let lastAudio = null;
+let lastAudioCtx = null;
+
 export async function startSpokenLLM(voice_id = "matthew", setLoading, session_id) {
   if (novaStarted) {
     console.warn("🔁 Nova Sonic is already started.");
@@ -129,6 +133,41 @@ export async function stopSpokenLLM() {
   console.log("🛑 Stopped PCM voice stream");
 }
 
+export function stopAudioPlayback() {
+  try {
+    // Cancel visualizer animation
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+
+    // Stop any currently playing audio element
+    if (lastAudio) {
+      try {
+        lastAudio.pause();
+        lastAudio.src && URL.revokeObjectURL(lastAudio.src);
+      } catch (e) {
+        console.error("❌ Error stopping audio element:", e);
+      }
+      lastAudio = null;
+    }
+
+    // Close the last audio context used for playback
+    if (lastAudioCtx && typeof lastAudioCtx.close === "function") {
+      lastAudioCtx.close().catch(() => {});
+      lastAudioCtx = null;
+    }
+
+    // Reset playback buffer state
+    isPlaying = false;
+    audioBuffer = [];
+
+    console.log("🔇 Audio playback stopped");
+  } catch (e) {
+    console.error("❌ Failed to stop audio playback:", e);
+  }
+}
+
 function convertFloat32ToInt16(buffer) {
   const l = buffer.length;
   const buf = new Int16Array(l);
@@ -244,6 +283,10 @@ function playBufferedAudio() {
     analyser.connect(audioCtx.destination);
 
     startWaveformVisualizer(bufferLength);
+
+    // Save refs for immediate stop later
+    lastAudio = audio;
+    lastAudioCtx = audioCtx;
 
     audioBuffer = [];
 
