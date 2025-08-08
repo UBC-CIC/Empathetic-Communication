@@ -95,19 +95,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
   const [empathySummary, setEmpathySummary] = useState(null);
   const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
-  const [streamingMessage, setStreamingMessage] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-
-  // Log streamingMessage changes
-  useEffect(() => {
-    console.log(
-      "🔄 STREAMING MESSAGE STATE CHANGED:",
-      streamingMessage,
-      "Length:",
-      streamingMessage.length
-    );
-  }, [streamingMessage]);
-  const [streamingKey, setStreamingKey] = useState(0);
 
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
   const [isInfoLoading, setIsInfoLoading] = useState(false);
@@ -115,6 +102,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [profilePicture, setProfilePicture] = useState({});
   const [patientContext, setPatientContext] = useState(null);
+  const STREAMING_TEMP_ID = "__streaming__";
 
   const navigate = useNavigate();
 
@@ -495,32 +483,90 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
+  const startStreamingBubble = () => {
+    // Add a placeholder AI message that we'll update in-place
+    setMessages((prev) => [
+      ...prev,
+      {
+        message_id: STREAMING_TEMP_ID,
+        student_sent: false,
+        message_content: " ", // space to ensure the bubble renders
+      },
+    ]);
+    setIsAItyping(false); // stop the typing indicator once streaming begins
+  };
+
+  const appendStreamingChunk = (text) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.message_id === STREAMING_TEMP_ID
+          ? {
+              ...m,
+              message_content:
+                (m.message_content === " " ? "" : m.message_content) + text,
+            }
+          : m
+      )
+    );
+  };
+
+  const finalizeStreamingBubble = async (finalText, sessionId) => {
+    try {
+      const authSession = await fetchAuthSession();
+      const { email } = await fetchUserAttributes();
+      const token = authSession.tokens.idToken;
+
+      const res = await fetch(
+        `${
+          import.meta.env.VITE_API_ENDPOINT
+        }student/create_ai_message?session_id=${encodeURIComponent(
+          sessionId
+        )}&email=${encodeURIComponent(
+          email
+        )}&simulation_group_id=${encodeURIComponent(
+          group.simulation_group_id
+        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ message_content: finalText }),
+        }
+      );
+
+      if (!res.ok) throw new Error("Failed to persist AI message");
+
+      const data = await res.json(); // server returns [message]
+      const saved = data[0];
+
+      // Replace the temp message with the real, saved one (same position, no flicker)
+      setMessages((prev) =>
+        prev.map((m) => (m.message_id === STREAMING_TEMP_ID ? saved : m))
+      );
+    } catch (e) {
+      console.error("Error finalizing streamed message:", e);
+      // If saving fails, keep the temp bubble as-is (optional: add error styling)
+    }
+  };
+
   // Handle AppSync streaming response function above
   // Function to fetch empathy summary
   // Handle AppSync streaming response
   const handleStreamingResponse = async (url, authToken, message) => {
-    setIsStreaming(true);
-    setStreamingMessage(" "); // Start with space to show component
-    setIsAItyping(false); // Stop typing indicator when streaming starts
     let fullResponse = "";
 
     try {
       const { generateClient } = await import("aws-amplify/api");
       const { fetchAuthSession } = await import("aws-amplify/auth");
 
-      // Get auth session for AppSync
       const authSession = await fetchAuthSession();
       const client = generateClient({
         authMode: "userPool",
         authToken: authSession.tokens?.idToken?.toString(),
       });
 
-      console.log(
-        "🔗 Subscribing to AppSync with session ID:",
-        session.session_id
-      );
-
-      // Subscribe to text stream
       const subscription = client
         .graphql({
           query: `
@@ -534,69 +580,43 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           variables: { sessionId: session.session_id },
         })
         .subscribe({
-          next: ({ data }) => {
-            console.log("📡 AppSync data received:", data);
+          next: async ({ data }) => {
             const streamData = JSON.parse(data.onTextStream.data);
-            console.log("📦 Parsed stream data:", streamData);
-            console.log(
-              "TESTMES",
-              data.onTextStream.data,
-              "(current placeholder message will be updated in state)"
-            );
 
-            // Process the stream data immediately
             try {
               if (streamData.type === "empathy") {
-                console.log("🧠 Empathy feedback:", streamData.content);
+                // optional: do nothing here
               } else if (streamData.type === "start") {
-                console.log("🚀 Stream started");
-                console.log("🔄 Setting streaming message to space");
-                setStreamingMessage(" "); // Start with space to show component
+                startStreamingBubble();
               } else if (streamData.type === "chunk") {
-                console.log("📝 AppSync chunk:", streamData.content);
                 fullResponse += streamData.content;
-                // Force immediate update
-                setStreamingMessage((prev) => {
-                  const newMessage =
-                    (prev === " " ? "" : prev) + streamData.content;
-                  console.log(
-                    "📝 STREAMING MESSAGE UPDATE:",
-                    "Previous:",
-                    prev,
-                    "Adding:",
-                    streamData.content,
-                    "New:",
-                    newMessage,
-                    "Length:",
-                    newMessage.length
-                  );
-                  setStreamingKey((k) => k + 1); // Force re-render
-                  return newMessage;
-                });
+                appendStreamingChunk(streamData.content);
               } else if (streamData.type === "end") {
-                console.log("✅ AppSync stream complete");
-                setIsStreaming(false);
-                // Don't clear streaming message immediately, let retrieveKnowledgeBase handle it
-                retrieveKnowledgeBase(fullResponse, session.session_id);
+                // Persist and replace the temp bubble in-place
+                await finalizeStreamingBubble(fullResponse, session.session_id);
                 subscription.unsubscribe();
               } else if (streamData.type === "error") {
                 console.error("❌ AppSync error:", streamData.content);
-                setIsStreaming(false);
-                setStreamingMessage("");
+                // Remove temp bubble on error (optional)
+                setMessages((prev) =>
+                  prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+                );
                 subscription.unsubscribe();
               }
-            } catch (error) {
-              console.error("Error processing stream data:", error);
+            } catch (err) {
+              console.error("Error processing stream data:", err);
             }
           },
           error: (error) => {
             console.error("❌ AppSync subscription error:", error);
-            setIsStreaming(false);
-            setStreamingMessage("");
+            // Remove temp bubble on error (optional)
+            setMessages((prev) =>
+              prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+            );
           },
         });
 
-      // Call text generation endpoint
+      // Kick off text generation
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -614,8 +634,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       return result;
     } catch (error) {
       console.error("❌ AppSync streaming error:", error);
-      setIsStreaming(false);
-      setStreamingMessage("");
+      // Remove temp bubble on error (optional)
+      setMessages((prev) =>
+        prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+      );
       throw error;
     }
   };
@@ -728,10 +750,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           if (!messageExists) {
             console.log("Adding new AI message to chat");
             setNewMessage(data[0]);
-            setStreamingMessage(""); // Clear streaming message after adding to chat
           } else {
             console.log("Duplicate AI message detected, not adding to chat");
-            setStreamingMessage(""); // Clear streaming message
           }
         } else {
           console.error("Failed to retrieve message:", response.statusText);
@@ -745,7 +765,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   }
 
   const handleSubmit = () => {
-    if (isSubmitting || isAItyping || creatingSession || isStreaming) return;
+    if (isSubmitting || isAItyping || creatingSession) return;
     setIsSubmitting(true);
     let newSession;
     let authToken;
@@ -1199,8 +1219,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   useEffect(() => {
     if (session) {
       setCurrentSessionId(session.session_id);
-      setStreamingMessage(""); // Clear any streaming message when switching sessions
-      setIsStreaming(false);
       getMessages();
     }
   }, [session]);
@@ -1431,19 +1449,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             )
           )}
 
-          {/* Streaming Message Display */}
-          {isStreaming && (
-            <AIMessage
-              key={`streaming-${streamingKey}`}
-              message={streamingMessage || ""}
-              profilePicture={profilePicture}
-              name={patient?.patient_name}
-              isStreaming={true}
-            />
-          )}
-
           {/* TypingIndicator */}
-          {isAItyping && !isStreaming && (
+          {isAItyping && (
             <TypingIndicator patientName={patient?.patient_name} />
           )}
           <div ref={messagesEndRef} />
@@ -1491,9 +1498,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             {/* Send Button */}
             <button
               onClick={handleSubmit}
-              disabled={
-                isSubmitting || isAItyping || creatingSession || isStreaming
-              }
+              disabled={isSubmitting || isAItyping || creatingSession}
               className="p-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors duration-200 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg
