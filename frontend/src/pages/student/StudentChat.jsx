@@ -96,6 +96,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isEmpathyCoachOpen, setIsEmpathyCoachOpen] = useState(false);
   const [empathySummary, setEmpathySummary] = useState(null);
+  const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
   const [isEmpathyLoading, setIsEmpathyLoading] = useState(false);
 
   const [patientInfoFiles, setPatientInfoFiles] = useState([]);
@@ -165,6 +166,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   useEffect(() => {
     if (newMessage !== null) {
       if (currentSessionId === session?.session_id) {
+        // Skip adding AI messages during streaming - backend handles message saving
+        if (!newMessage.student_sent && messages.some(m => m.message_id === STREAMING_TEMP_ID)) {
+          console.log("Skipping AI message - streaming in progress");
+          setNewMessage(null);
+          return;
+        }
+
         // Enhanced duplicate detection
         const contentKey = `${
           newMessage.student_sent ? "student" : "ai"
@@ -513,47 +521,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   };
 
   const finalizeStreamingBubble = async (finalText, sessionId) => {
-    try {
-      const authSession = await fetchAuthSession();
-      const { email } = await fetchUserAttributes();
-      const token = authSession.tokens.idToken;
-
-      const res = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/create_ai_message?session_id=${encodeURIComponent(
-          sessionId
-        )}&email=${encodeURIComponent(
-          email
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(patient.patient_id)}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ message_content: finalText }),
-        }
-      );
-
-      if (!res.ok) throw new Error("Failed to persist AI message");
-
-      const data = await res.json();
-      const saved = data[0];
-
-      // Replace the temp message with the real, saved one (same position, no flicker)
-      setMessages((prev) =>
-        prev.map((m) => (m.message_id === STREAMING_TEMP_ID ? saved : m))
-      );
-      
-      // Prevent this message from being added again via newMessage mechanism
-      setNewMessage(null);
-    } catch (e) {
-      console.error("Error finalizing streamed message:", e);
-      // If saving fails, keep the temp bubble as-is (optional: add error styling)
-    }
+    // Backend already saves the message, just update the temp bubble with final content
+    setMessages((prev) =>
+      prev.map((m) => 
+        m.message_id === STREAMING_TEMP_ID 
+          ? { ...m, message_id: `ai_${Date.now()}`, message_content: finalText }
+          : m
+      )
+    );
   };
 
   // Handle AppSync streaming response function above
@@ -597,7 +572,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             try {
               if (streamData.type === "empathy") {
                 console.log("🧠 Empathy feedback received:", streamData.content);
-                // You can display this immediately or store it for later use
+                setRealtimeEmpathy(prev => [...prev, { content: streamData.content, timestamp: Date.now() }]);
               } else if (streamData.type === "start") {
                 startStreamingBubble();
               } else if (streamData.type === "chunk") {
@@ -656,6 +631,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   const fetchEmpathySummary = async () => {
     if (!session || !patient) return;
+
+    // Use real-time empathy data if available, otherwise fetch from API
+    if (realtimeEmpathy.length > 0) {
+      setEmpathySummary({ realtime_feedback: realtimeEmpathy });
+      setIsEmpathyCoachOpen(true);
+      return;
+    }
 
     setIsEmpathyLoading(true);
     try {
