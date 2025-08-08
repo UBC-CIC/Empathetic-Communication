@@ -540,13 +540,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       if (!res.ok) throw new Error("Failed to persist AI message");
 
-      const data = await res.json(); // server returns [message]
+      const data = await res.json();
       const saved = data[0];
 
       // Replace the temp message with the real, saved one (same position, no flicker)
       setMessages((prev) =>
         prev.map((m) => (m.message_id === STREAMING_TEMP_ID ? saved : m))
       );
+      
+      // Prevent this message from being added again via newMessage mechanism
+      setNewMessage(null);
     } catch (e) {
       console.error("Error finalizing streamed message:", e);
       // If saving fails, keep the temp bubble as-is (optional: add error styling)
@@ -556,7 +559,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   // Handle AppSync streaming response function above
   // Function to fetch empathy summary
   // Handle AppSync streaming response
-  const handleStreamingResponse = async (url, authToken, message) => {
+  const handleStreamingResponse = async (url, authToken, message, sessionId = null) => {
     let fullResponse = "";
 
     try {
@@ -569,6 +572,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         authToken: authSession.tokens?.idToken?.toString(),
       });
 
+      // Use provided sessionId or fall back to session.session_id
+      const currentSessionId = sessionId || session?.session_id;
+      if (!currentSessionId) {
+        throw new Error("No session ID available for streaming");
+      }
+
       const subscription = client
         .graphql({
           query: `
@@ -579,7 +588,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             }
           }
         `,
-          variables: { sessionId: session.session_id },
+          variables: { sessionId: currentSessionId },
         })
         .subscribe({
           next: async ({ data }) => {
@@ -596,7 +605,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 appendStreamingChunk(streamData.content);
               } else if (streamData.type === "end") {
                 // Persist and replace the temp bubble in-place
-                await finalizeStreamingBubble(fullResponse, session.session_id);
+                await finalizeStreamingBubble(fullResponse, currentSessionId);
                 subscription.unsubscribe();
               } else if (streamData.type === "error") {
                 console.error("❌ AppSync error:", streamData.content);
@@ -851,8 +860,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         )}&stream=true`;
 
         console.log("🚀 Using AppSync streaming");
-        // Handle AppSync streaming
-        return handleStreamingResponse(textGenUrl, authToken, message);
+        // Handle AppSync streaming (don't add student message to newMessage since it's already added)
+        return handleStreamingResponse(textGenUrl, authToken, message, newSession.session_id);
       })
       .then((textGenData) => {
         setSession((prevSession) => ({
@@ -1005,7 +1014,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         console.log("Session data for text generation:", sessionData);
 
         // Handle AppSync streaming for initial message
-        return handleStreamingResponse(textGenUrl, authToken, "");
+        return handleStreamingResponse(textGenUrl, authToken, "", sessionData.session_id);
       })
       .then((textResponseData) => {
         console.log("sessionData:", sessionData);
