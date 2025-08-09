@@ -364,6 +364,10 @@ function playBufferedAudio() {
         return sum / count;
       };
 
+      {
+        /** Comment: Add visualization for audio playback **/
+      }
+
       for (let i = 0; i < bufferLength; i += step) {
         const v = getAveragedValue(i) / 255;
         const targetR = baseRadius + (v - 0.5) * amplitude * 2;

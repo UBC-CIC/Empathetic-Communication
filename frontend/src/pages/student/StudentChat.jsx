@@ -1270,7 +1270,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             )}
           </div>
         </div>
-
+        {/* Comment: Sidebar Content */}
         {/* New Chat Button */}
         <div className="p-4">
           <button
