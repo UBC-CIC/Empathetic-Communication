@@ -16,14 +16,20 @@ let novaStartListenerAttached = false;
 let lastAudio = null;
 let lastAudioCtx = null;
 
-export async function startSpokenLLM(voice_id = "matthew", setLoading, session_id) {
+
+export async function startSpokenLLM(
+  voice_id = "matthew",
+  setLoading,
+  session_id
+) {
+
   if (novaStarted) {
     console.warn("🔁 Nova Sonic is already started.");
     return;
   }
 
   const socket = await getSocket();
-  
+
   // Clean up any existing listeners to prevent duplicates
   socket.off("nova-started");
 
@@ -191,7 +197,10 @@ export function playAudio(audioBytes) {
     }
 
     audioBuffer.push(audioBytes);
-    console.log("🔊 Added audio chunk to buffer, current chunks:", audioBuffer.length);
+    console.log(
+      "🔊 Added audio chunk to buffer, current chunks:",
+      audioBuffer.length
+    );
 
     if (bufferTimeout) {
       clearTimeout(bufferTimeout);

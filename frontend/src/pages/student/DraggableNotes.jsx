@@ -4,7 +4,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { fetchAuthSession } from "aws-amplify/auth";
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 
-function DraggableNotes({ onClose, sessionId }) {
+function DraggableNotes({ onClose, sessionId, zIndex = 50 }) {
   const [noteContent, setNoteContent] = useState("");
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const [dimensions, setDimensions] = useState({ width: 400, height: 300 });
@@ -146,13 +146,14 @@ function DraggableNotes({ onClose, sessionId }) {
     <div
       ref={noteRef}
       onMouseDown={handleMouseDown}
-      className="fixed bg-white border border-gray-200 rounded-2xl shadow-lg z-50"
+      className="fixed bg-white border border-gray-200 rounded-2xl shadow-lg"
       style={{
         top: `${position.y}px`,
         left: `${position.x}px`,
         width: `${dimensions.width}px`,
         height: `${dimensions.height}px`,
         cursor: "grab",
+        zIndex: zIndex,
       }}
     >
       {/* Header */}

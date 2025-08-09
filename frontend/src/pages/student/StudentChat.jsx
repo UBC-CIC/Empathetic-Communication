@@ -40,9 +40,26 @@ import PsychologyIcon from "@mui/icons-material/Psychology";
 
 import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
 
+// Add Amplify GraphQL client for AppSync streaming
+import { generateClient } from "aws-amplify/api";
+const gqlClient = generateClient();
+
+// AppSync subscription for streaming text
+const ON_TEXT_STREAM = /* GraphQL */ `
+  subscription OnTextStream($sessionId: String!) {
+    onTextStream(sessionId: $sessionId) {
+      sessionId
+      data
+    }
+  }
+`;
+
 // Importing l-mirage animation
 import { mirage } from "ldrs";
 mirage.register();
+
+// Temporary ID used for the streaming bubble
+const STREAMING_TEMP_ID = "STREAMING_TEMP_ID";
 
 // TypingIndicator using l-mirage
 const TypingIndicator = ({ patientName }) => (
@@ -100,6 +117,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const [answerKeyFiles, setAnswerKeyFiles] = useState([]);
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [profilePicture, setProfilePicture] = useState(null);
+
+  // Real-time empathy chunks from AppSync stream
+  const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
+
+  // Remove global AppSync subscription approach; we'll subscribe per request
+  // const streamSubRef = useRef(null);
+
 
   const navigate = useNavigate();
 
@@ -457,6 +481,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const fetchEmpathySummary = async () => {
     if (!session || !patient) return;
 
+    // Prefer real-time empathy if available
+    if (realtimeEmpathy.length > 0) {
+      setEmpathySummary({ realtime_feedback: realtimeEmpathy });
+      setIsEmpathyCoachOpen(true);
+      return;
+    }
+
+
     setIsEmpathyLoading(true);
     try {
       const authSession = await fetchAuthSession();
@@ -575,6 +607,142 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   }
 
+  // Streaming helpers for AppSync text stream
+  const STREAMING_TEMP_ID = "STREAMING_TEMP_ID";
+
+  const startStreamingBubble = () => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        message_id: STREAMING_TEMP_ID,
+        student_sent: false,
+        message_content: " ", // space ensures bubble renders
+      },
+    ]);
+    setIsAItyping(false);
+  };
+
+  const appendStreamingChunk = (text) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.message_id === STREAMING_TEMP_ID
+          ? {
+              ...m,
+              message_content:
+                (m.message_content === " " ? "" : m.message_content) + text,
+            }
+          : m
+      )
+    );
+  };
+
+  const finalizeStreamingBubble = async (finalText, sessionId) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.message_id === STREAMING_TEMP_ID
+          ? { ...m, message_id: `ai_${Date.now()}`, message_content: finalText }
+          : m
+      )
+    );
+  };
+
+  const handleStreamingResponse = async (
+    url,
+    authToken,
+    message,
+    overrideSessionId = null
+  ) => {
+    let fullResponse = "";
+
+    try {
+      const { generateClient } = await import("aws-amplify/api");
+      const { fetchAuthSession } = await import("aws-amplify/auth");
+
+      const authSession = await fetchAuthSession();
+      const client = generateClient({
+        authMode: "userPool",
+        authToken: authSession.tokens?.idToken?.toString(),
+      });
+
+      const currentSessionId = overrideSessionId || session?.session_id;
+      if (!currentSessionId)
+        throw new Error("No session ID available for streaming");
+
+      const subscription = client
+        .graphql({
+          query: `
+            subscription OnTextStream($sessionId: String!) {
+              onTextStream(sessionId: $sessionId) {
+                sessionId
+                data
+              }
+            }
+          `,
+          variables: { sessionId: currentSessionId },
+        })
+        .subscribe({
+          next: async ({ data }) => {
+            try {
+              const streamData = JSON.parse(data.onTextStream.data);
+              const t = streamData?.type;
+              const content = streamData?.content || "";
+
+              if (t === "empathy") {
+                setRealtimeEmpathy((prev) => [
+                  ...prev,
+                  { content, timestamp: Date.now() },
+                ]);
+              } else if (t === "start") {
+                startStreamingBubble();
+              } else if (t === "chunk") {
+                fullResponse += content;
+                appendStreamingChunk(content);
+              } else if (t === "end") {
+                await finalizeStreamingBubble(fullResponse, currentSessionId);
+                subscription.unsubscribe();
+              } else if (t === "error") {
+                console.error("❌ AppSync error:", content);
+                setMessages((prev) =>
+                  prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+                );
+                subscription.unsubscribe();
+              }
+            } catch (err) {
+              console.error("Error processing stream data:", err);
+            }
+          },
+          error: (error) => {
+            console.error("❌ AppSync subscription error:", error);
+            setMessages((prev) =>
+              prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+            );
+          },
+        });
+
+      // Kick off text generation request after subscribing
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: authToken,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message_content: message }),
+      });
+
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error("❌ AppSync streaming error:", error);
+      setMessages((prev) =>
+        prev.filter((m) => m.message_id !== STREAMING_TEMP_ID)
+      );
+      throw error;
+    }
+  };
+
   const handleSubmit = () => {
     if (isSubmitting || isAItyping || creatingSession) return;
     setIsSubmitting(true);
@@ -656,26 +824,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           patient.patient_id
         )}&session_name=${encodeURIComponent(newSession.session_name)}`;
 
-        return fetch(textGenUrl, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message_content: message,
-          }),
-        });
-      })
-      .then((textGenResponse) => {
-        if (!textGenResponse.ok) {
-          throw new Error(
-            `Failed to generate text: ${textGenResponse.statusText}`
-          );
-        }
-        return textGenResponse.json();
+        console.log("🚀 Using AppSync streaming");
+        return handleStreamingResponse(
+          textGenUrl,
+          authToken,
+          message,
+          newSession.session_id
+        );
       })
       .then((textGenData) => {
+        // Update session name and patient score as before, but do NOT add AI message here (stream handles it)
         setSession((prevSession) => ({
           ...prevSession,
           session_name: textGenData.session_name,
@@ -722,7 +880,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               "Content-Type": "application/json",
             },
           }),
-          textGenData,
         ]);
       })
       .then(([response1, response2, textGenData]) => {
@@ -730,10 +887,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           throw new Error("Failed to fetch endpoints");
         }
 
-        return retrieveKnowledgeBase(
-          textGenData.llm_output,
-          newSession.session_id
-        );
+        return textGenData;
+
       })
       .catch((error) => {
         setIsSubmitting(false);
@@ -827,27 +982,17 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
         console.log("Session data for text generation:", sessionData);
 
-        return fetch(textGenUrl, {
-          method: "POST",
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-        });
-      })
-      .then((textResponse) => {
-        if (!textResponse.ok) {
-          throw new Error(
-            `Failed to create initial message: ${textResponse.statusText}`
-          );
-        }
-        return textResponse.json();
-      })
-      .then((textResponseData) => {
-        retrieveKnowledgeBase(
-          textResponseData.llm_output,
+        // Use the same AppSync streaming flow for the initial message
+        return handleStreamingResponse(
+          textGenUrl,
+          authToken,
+          "",
           sessionData.session_id
         );
+      })
+      .then((textResponseData) => {
+        // Do not call retrieveKnowledgeBase here; stream already persisted the AI message.
+
         console.log("sessionData:", sessionData);
         return sessionData;
       })
@@ -1288,6 +1433,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 message={message.message_content}
                 profilePicture={profilePicture}
                 name={patient?.patient_name}
+                isStreaming={message._streaming === true}
               />
             )
           )}
@@ -1369,6 +1515,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           isOpen={isNotesOpen}
           sessionId={session.session_id}
           onClose={() => setIsNotesOpen(false)}
+          zIndex={showVoiceOverlay ? 3500 : 50}
         />
       )}
 
@@ -1538,6 +1685,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                 </div>
               </div>
             )}
+
             <div className="text-center">
               <div className="relative z-[3001] w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 overflow-hidden shadow-lg">
                 {profilePicture ? (
@@ -1581,23 +1729,34 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               height={window.innerHeight}
               className="fixed top-0 left-0 pointer-events-none z-[2000] opacity-30"
             />
+
+
+            {/* Bottom control island with Close (red) and Notes (white) */}
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3003] bg-white/90 backdrop-blur-md border border-gray-200 shadow-lg rounded-full px-3 py-2 flex items-center space-x-3">
+              <button
+                onClick={() => {
+                  stopAudioPlayback();
+                  stopSpokenLLM();
+                  setIsRecording(false);
+                  setShowVoiceOverlay(false);
+                  setLoading(false);
+                }}
+                aria-label="Close voice overlay"
+                className="w-12 h-12 rounded-full bg-[#ff6666] hover:bg-[#c74545] flex items-center justify-center shadow-md"
+              >
+                <CloseIcon className="w-6 h-6 text-white" />
+              </button>
+
+              <button
+                onClick={() => setIsNotesOpen(true)}
+                aria-label="Open notes"
+                className="w-12 h-12 rounded-full bg-white hover:bg-gray-50 border border-gray-200 flex items-center justify-center shadow-md"
+              >
+                <DescriptionIcon className="w-6 h-6 text-gray-700" />
+              </button>
+            </div>
           </div>
 
-          {/* Close button */}
-          <button
-            onClick={() => {
-              // 3) Immediately stop any audio playback
-              stopAudioPlayback();
-              // Stop mic/stream
-              stopSpokenLLM();
-              setIsRecording(false);
-              setShowVoiceOverlay(false);
-              setLoading(false);
-            }}
-            className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[3000] bg-white hover:bg-gray-50 text-gray-700 rounded-full w-14 h-14 flex items-center justify-center shadow-lg border border-gray-200 transition-all duration-200"
-          >
-            <CloseIcon className="w-6 h-6" />
-          </button>
         </>
       )}
     </div>
