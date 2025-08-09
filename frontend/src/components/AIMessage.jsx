@@ -119,12 +119,7 @@ const AIMessage = ({
         >
           <div className="text-sm text-gray-900 leading-relaxed">
             <MarkdownRender content={processedMessage} />
-            {isStreaming && (
-              <span
-                aria-hidden
-                className="inline-block align-bottom ml-1 w-[2px] h-[1em] bg-emerald-500 animate-pulse"
-              />
-            )}
+            {/* Removed typing cursor while streaming */}
           </div>
         </div>
       </div>
