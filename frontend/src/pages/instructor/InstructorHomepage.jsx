@@ -251,7 +251,7 @@ const InstructorHomepage = () => {
               }}
             >
               <Toolbar />
-              <Typography
+              {/* <Typography
                 color="black"
                 fontStyle="semibold"
                 textAlign="left"
@@ -263,7 +263,7 @@ const InstructorHomepage = () => {
                 }}
               >
                 Simulation Groups
-              </Typography>
+              </Typography> */}
               <Paper
                 sx={{
                   width: "100%",

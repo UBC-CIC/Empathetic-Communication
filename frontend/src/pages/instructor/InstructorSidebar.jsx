@@ -13,7 +13,7 @@ import ViewTimelineIcon from "@mui/icons-material/ViewTimeline";
 import EditIcon from "@mui/icons-material/Edit";
 import PsychologyIcon from "@mui/icons-material/Psychology";
 import GroupIcon from "@mui/icons-material/Group";
-import GroupsIcon from "@mui/icons-material/Groups";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 
 const InstructorSidebar = ({ setSelectedComponent }) => {
@@ -71,8 +71,8 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
           <List>
             {[
               {
-                text: "All Groups",
-                icon: <GroupsIcon />,
+                text: "Back to All Groups",
+                icon: <ArrowBackIcon />,
                 route: "InstructorAllGroups",
               },
               {
