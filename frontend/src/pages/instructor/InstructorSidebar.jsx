@@ -60,7 +60,8 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
             boxSizing: "border-box",
             backgroundColor: "white",
             borderRight: "1px solid #e5e7eb",
-            boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05), 0 1px 2px -1px rgba(0,0,0,0.05)",
+            boxShadow:
+              "0 1px 3px 0 rgba(0,0,0,0.05), 0 1px 2px -1px rgba(0,0,0,0.05)",
             transition: "width 0.2s ease",
             overflowX: "hidden",
           },
@@ -69,11 +70,31 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
         <Box sx={{ overflow: "hidden", paddingTop: 10 }}>
           <List>
             {[
-              { text: "All Groups", icon: <GroupsIcon />, route: "InstructorAllGroups" },
-              { text: "Analytics", icon: <ShowChartIcon />, route: "InstructorAnalytics" },
-              { text: "Edit Patients", icon: <EditIcon />, route: "InstructorEditPatients" },
-              { text: "Prompt Settings", icon: <PsychologyIcon />, route: "PromptSettings" },
-              { text: "View Students", icon: <GroupIcon />, route: "ViewStudents" },
+              {
+                text: "All Groups",
+                icon: <GroupsIcon />,
+                route: "InstructorAllGroups",
+              },
+              {
+                text: "Analytics",
+                icon: <ShowChartIcon />,
+                route: "InstructorAnalytics",
+              },
+              {
+                text: "Edit Patients",
+                icon: <EditIcon />,
+                route: "InstructorEditPatients",
+              },
+              {
+                text: "Prompt Settings",
+                icon: <PsychologyIcon />,
+                route: "PromptSettings",
+              },
+              {
+                text: "View Students",
+                icon: <GroupIcon />,
+                route: "ViewStudents",
+              },
             ].map((item, index) => (
               <React.Fragment key={index}>
                 <ListItem
@@ -81,7 +102,8 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
                   onClick={() => handleNavigation(item.route)}
                   sx={{
                     display: "flex",
-                    justifyContent: drawerWidth <= 160 ? "center" : "flex-start",
+                    justifyContent:
+                      drawerWidth <= 160 ? "center" : "flex-start",
                     alignItems: "center",
                     margin: "4px 8px",
                     borderRadius: "12px",
@@ -123,7 +145,9 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
                   )}
                 </ListItem>
                 {index < 4 && (
-                  <Divider sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }} />
+                  <Divider
+                    sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }}
+                  />
                 )}
               </React.Fragment>
             ))}
@@ -133,7 +157,12 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
       <div
         onMouseDown={startResizing}
         className="w-1 bg-gray-200 hover:bg-emerald-300 cursor-col-resize transition-colors duration-200"
-        style={{ height: "100vh", position: "absolute", top: 0, left: drawerWidth }}
+        style={{
+          height: "100vh",
+          position: "absolute",
+          top: 0,
+          left: drawerWidth,
+        }}
       />
     </>
   );

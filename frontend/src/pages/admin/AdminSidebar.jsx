@@ -71,8 +71,16 @@ const AdminSidebar = ({
         >
           <List>
             {[
-              { text: "Instructors", icon: <ContactPageIcon />, route: "AdminInstructors" },
-              { text: "Simulation Groups", icon: <GroupsIcon />, route: "AdminSimulationGroups" },
+              {
+                text: "Instructors",
+                icon: <ContactPageIcon />,
+                route: "AdminInstructors",
+              },
+              {
+                text: "Simulation Groups",
+                icon: <GroupsIcon />,
+                route: "AdminSimulationGroups",
+              },
             ].map((item, index) => (
               <React.Fragment key={index}>
                 <ListItem
@@ -84,7 +92,8 @@ const AdminSidebar = ({
                   }}
                   sx={{
                     display: "flex",
-                    justifyContent: drawerWidth <= 160 ? "center" : "flex-start",
+                    justifyContent:
+                      drawerWidth <= 160 ? "center" : "flex-start",
                     alignItems: "center",
                     margin: "4px 8px",
                     borderRadius: "12px",
@@ -126,7 +135,9 @@ const AdminSidebar = ({
                   )}
                 </ListItem>
                 {index < 1 && (
-                  <Divider sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }} />
+                  <Divider
+                    sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }}
+                  />
                 )}
               </React.Fragment>
             ))}
@@ -138,7 +149,12 @@ const AdminSidebar = ({
       <div
         onMouseDown={startResizing}
         className="w-1 bg-gray-200 hover:bg-emerald-300 cursor-col-resize transition-colors duration-200"
-        style={{ height: "100vh", position: "absolute", top: 0, left: drawerWidth }}
+        style={{
+          height: "100vh",
+          position: "absolute",
+          top: 0,
+          left: drawerWidth,
+        }}
       />
     </>
   );
