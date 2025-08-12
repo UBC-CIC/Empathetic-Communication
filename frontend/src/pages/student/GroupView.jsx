@@ -241,9 +241,9 @@ export const GroupView = ({ group, setPatient, setGroup }) => {
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="bg-white min-h-screen">
       {/* Modern Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center shadow-sm">
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-4">
           <button
             onClick={() => handleBack()}

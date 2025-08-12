@@ -254,7 +254,12 @@ export const StudentHomepage = ({ setGroup }) => {
           {loading ? (
             <div className="flex items-center justify-center min-h-96">
               <div className="text-center">
-                <l-cardio size="50" stroke="4" speed="2" color="#10b981"></l-cardio>
+                <l-cardio
+                  size="50"
+                  stroke="4"
+                  speed="2"
+                  color="#10b981"
+                ></l-cardio>
                 <Typography className="mt-4 text-gray-600 font-medium">
                   Loading your groups...
                 </Typography>
@@ -278,7 +283,10 @@ export const StudentHomepage = ({ setGroup }) => {
                     />
                   </svg>
                 </div>
-                <Typography variant="h5" className="text-gray-900 font-semibold mb-3">
+                <Typography
+                  variant="h5"
+                  className="text-gray-900 font-semibold mb-3"
+                >
                   No groups yet
                 </Typography>
                 <Typography
