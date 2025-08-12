@@ -234,6 +234,7 @@ export const StudentHomepage = ({ setGroup }) => {
                   fontWeight: "600",
                   px: 4,
                   py: 1.5,
+                  color: "white",
                   boxShadow:
                     "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0,0,0,0.05)",
                   transition: "all 0.2s ease-in-out",

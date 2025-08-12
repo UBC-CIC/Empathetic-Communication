@@ -539,88 +539,69 @@ const InstructorPatients = ({ groupName, simulation_group_id }) => {
   return (
     <Box
       component="main"
-      sx={{ flexGrow: 1, p: 3, marginTop: 1, overflow: "auto" }}
+      sx={{ flexGrow: 1, p: 3, mt: 1, overflow: 'auto', backgroundColor: '#ffffff' }}
     >
       <Toolbar />
-      <Typography
-        color="black"
-        fontStyle="semibold"
-        textAlign="left"
-        variant="h6"
-      >
+      <Typography color="black" fontStyle="semibold" textAlign="left" variant="h6" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
         {groupTitleCase(groupName)}
       </Typography>
-      <Paper sx={{ width: "100%", overflow: "hidden", marginTop: 2 }}>
-        <Box sx={{ maxHeight: "400px", overflowY: "auto" }}>
+      <Paper sx={{ width: '100%', maxWidth: '1200px', mx: 'auto', overflow: 'hidden', borderRadius: '16px', border: '1px solid #e5e7eb', backgroundColor: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.05)', p: 2 }}>
+        <Box sx={{ maxHeight: 480, overflowY: 'auto', pr: 1 }}>
           <MRT_TableContainer table={table} />
         </Box>
       </Paper>
-      <Box
-        sx={{
-          marginTop: 2,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleOpenNewPatientDialog}
-        >
-          Create New Patient
-        </Button>
-
-        <Dialog
-          open={openNewPatientDialog}
-          onClose={handleCloseNewPatientDialog}
-          fullWidth
-          maxWidth="md"
-        >
-          <DialogTitle>Create New Patient</DialogTitle>
-          <DialogContent style={{ overflow: "hidden" }}>
-            <InstructorNewPatient
-              data={data}
-              simulation_group_id={simulation_group_id}
-              onClose={handleCloseNewPatientDialog}
-              onPatientCreated={onPatientCreated}
-              showSuccessToast={showSuccessToast}
-            />
-          </DialogContent>
-          {/* <DialogActions>
-            <Button onClick={handleCloseNewPatientDialog} color="primary">
-              Cancel
-            </Button>
-          </DialogActions> */}
-        </Dialog>
-
-        <Dialog
-          open={openEditPatientDialog}
-          onClose={handleCloseEditPatientDialog}
-          fullWidth
-          maxWidth="md"
-        >
-          <DialogTitle>Edit Patient</DialogTitle>
-          <DialogContent style={{ overflow: "hidden" }}>
-            <InstructorEditPatients
-              patientData={selectedPatient}
-              simulation_group_id={simulation_group_id}
-              onClose={handleCloseEditPatientDialog}
-              onPatientUpdated={onPatientUpdated}
-              showSuccessToast={showSuccessToast}
-            />
-          </DialogContent>
-          {/* <DialogActions>
-            <Button onClick={handleCloseEditPatientDialog} color="primary">
-              Cancel
-            </Button>
-          </DialogActions> */}
-        </Dialog>
-
-        <Button variant="contained" color="primary" onClick={handleSaveChanges}>
-          Save Changes
-        </Button>
+      <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1200px', mx: 'auto' }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <Button variant="contained" color="primary" onClick={handleOpenNewPatientDialog} sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, backgroundColor: '#10b981', '&:hover': { backgroundColor: '#059669' } }}>Create New Patient</Button>
+          <Button variant="contained" color="primary" onClick={handleSaveChanges} sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, backgroundColor: '#10b981', '&:hover': { backgroundColor: '#059669' } }}>Save Changes</Button>
+        </Box>
       </Box>
+      <Dialog
+        open={openNewPatientDialog}
+        onClose={handleCloseNewPatientDialog}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Create New Patient</DialogTitle>
+        <DialogContent style={{ overflow: "hidden" }}>
+          <InstructorNewPatient
+            data={data}
+            simulation_group_id={simulation_group_id}
+            onClose={handleCloseNewPatientDialog}
+            onPatientCreated={onPatientCreated}
+            showSuccessToast={showSuccessToast}
+          />
+        </DialogContent>
+        {/* <DialogActions>
+          <Button onClick={handleCloseNewPatientDialog} color="primary">
+            Cancel
+          </Button>
+        </DialogActions> */}
+      </Dialog>
+
+      <Dialog
+        open={openEditPatientDialog}
+        onClose={handleCloseEditPatientDialog}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Edit Patient</DialogTitle>
+        <DialogContent style={{ overflow: "hidden" }}>
+          <InstructorEditPatients
+            patientData={selectedPatient}
+            simulation_group_id={simulation_group_id}
+            onClose={handleCloseEditPatientDialog}
+            onPatientUpdated={onPatientUpdated}
+            showSuccessToast={showSuccessToast}
+          />
+        </DialogContent>
+        {/* <DialogActions>
+          <Button onClick={handleCloseEditPatientDialog} color="primary">
+            Cancel
+          </Button>
+        </DialogActions> */}
+      </Dialog>
+
       <ToastContainer
         position="top-center"
         autoClose={5000}

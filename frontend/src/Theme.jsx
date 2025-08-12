@@ -29,7 +29,20 @@ const theme = createTheme({
   },
   components: {
     MuiButton: {
+      defaultProps: {
+        disableElevation: true,
+      },
       styleOverrides: {
+        root: {
+          boxShadow: "none !important",
+          "&:hover": { boxShadow: "none !important" },
+          "&:active": { boxShadow: "none !important" },
+          "&:focus": { boxShadow: "none !important" },
+        },
+        contained: {
+          boxShadow: "none !important",
+          "&:hover": { boxShadow: "none !important" },
+        },
         containedPrimary: {
           color: "#ffffff", // ensure white text for primary contained buttons
         },

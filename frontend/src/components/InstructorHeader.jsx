@@ -27,7 +27,7 @@ const InstructorHeader = () => {
     <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
       <div className="flex items-center space-x-3">
         <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-          {/* Replaced previous academic cap icon with a teaching presentation icon */}
+          {/* Graduation cap (school) icon */}
           <svg
             className="w-6 h-6 text-emerald-600"
             viewBox="0 0 24 24"
@@ -37,17 +37,11 @@ const InstructorHeader = () => {
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            {/* Screen */}
-            <rect x="3" y="4" width="18" height="10" rx="2" ry="2" />
-            {/* Stand */}
-            <path d="M12 14v4" />
-            <path d="M8 18h8" />
-            {/* Person (instructor) */}
-            <circle cx="8" cy="9" r="1.5" />
-            <path d="M8 10.5c1.2 0 2.2.7 2.6 1.7" />
-            {/* Pointer / highlight */}
-            <path d="M12.5 8H17" />
-            <path d="M12.5 10H15" />
+            <path d="M3 7l9-4 9 4-9 4-9-4z" />
+            <path d="M12 11l9-4" />
+            <path d="M12 11L3 7" />
+            <path d="M12 11v8" />
+            <path d="M7 15c1.5 1 3.5 1 5 0s3.5-1 5 0" />
           </svg>
         </div>
         <div className="text-left">

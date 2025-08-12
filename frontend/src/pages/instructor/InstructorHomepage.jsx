@@ -121,7 +121,10 @@ const GroupDetails = () => {
         >
           <InstructorHeader />
         </AppBar>
-        <InstructorSidebar setSelectedComponent={setSelectedComponent} />
+        <InstructorSidebar
+          setSelectedComponent={setSelectedComponent}
+          activeExternal={selectedComponent}
+        />
         {renderComponent()}
       </PageContainer>
     </div>

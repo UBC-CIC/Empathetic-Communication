@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Drawer,
@@ -16,9 +16,16 @@ import GroupIcon from "@mui/icons-material/Group";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 
-const InstructorSidebar = ({ setSelectedComponent }) => {
+const InstructorSidebar = ({ setSelectedComponent, activeExternal }) => {
   const navigate = useNavigate();
   const [drawerWidth, setDrawerWidth] = useState(220);
+  const [activeRoute, setActiveRoute] = useState(
+    activeExternal || "InstructorAnalytics"
+  );
+
+  useEffect(() => {
+    if (activeExternal) setActiveRoute(activeExternal);
+  }, [activeExternal]);
 
   const handleMouseMove = (e) => {
     const newWidth = e.clientX;
@@ -45,6 +52,7 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
       navigate("/home");
     } else {
       setSelectedComponent(component);
+      setActiveRoute(component);
     }
   };
 
@@ -60,14 +68,16 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
             boxSizing: "border-box",
             backgroundColor: "white",
             borderRight: "1px solid #e5e7eb",
+            marginTop: "1rem",
             boxShadow:
               "0 1px 3px 0 rgba(0,0,0,0.05), 0 1px 2px -1px rgba(0,0,0,0.05)",
             transition: "width 0.2s ease",
-            overflowX: "hidden",
+            overflow: "visible", // allow active highlight to render fully
+            paddingTop: "64px",
           },
         }}
       >
-        <Box sx={{ overflow: "hidden", paddingTop: 10 }}>
+        <Box sx={{ px: 1.5, pb: 2 }}>
           <List>
             {[
               {
@@ -95,62 +105,77 @@ const InstructorSidebar = ({ setSelectedComponent }) => {
                 icon: <GroupIcon />,
                 route: "ViewStudents",
               },
-            ].map((item, index) => (
-              <React.Fragment key={index}>
-                <ListItem
-                  button
-                  onClick={() => handleNavigation(item.route)}
-                  sx={{
-                    display: "flex",
-                    justifyContent:
-                      drawerWidth <= 160 ? "center" : "flex-start",
-                    alignItems: "center",
-                    margin: "4px 8px",
-                    borderRadius: "12px",
-                    transition: "all 0.2s ease-in-out",
-                    "&:hover": {
-                      backgroundColor: "#f0fdf4",
-                      transform: "translateX(2px)",
-                      boxShadow: "0 2px 4px -1px rgba(0,0,0,0.05)",
-                    },
-                    "&:active": {
-                      backgroundColor: "#dcfce7",
-                    },
-                  }}
-                >
-                  <ListItemIcon
+            ].map((item, index) => {
+              const active = activeRoute === item.route;
+              return (
+                <React.Fragment key={index}>
+                  <ListItem
+                    button
+                    onClick={() => handleNavigation(item.route)}
                     sx={{
+                      position: "relative",
                       display: "flex",
-                      justifyContent: "center",
+                      justifyContent:
+                        drawerWidth <= 160 ? "center" : "flex-start",
                       alignItems: "center",
-                      minWidth: 0,
-                      marginRight: drawerWidth > 160 ? 2 : 0,
-                      width: drawerWidth <= 160 ? "100%" : "auto",
-                      color: "#10b981",
+                      my: 0.5,
+                      borderRadius: "12px",
+                      transition: "all 0.18s ease",
+                      backgroundColor: active ? "#ecfdf5" : "transparent",
+                      boxShadow: active ? "0 0 0 1px #a7f3d0 inset" : "none",
+                      "&:hover": {
+                        backgroundColor: "#f0fdf4",
+                        transform: "translateX(2px)",
+                        boxShadow: "0 2px 4px -1px rgba(0,0,0,0.05)",
+                      },
+                      "&:active": { backgroundColor: "#dcfce7" },
+                      "&::before":
+                        active && drawerWidth > 160
+                          ? {
+                              content: '""',
+                              position: "absolute",
+                              left: -6,
+                              top: 6,
+                              bottom: 6,
+                              width: 4,
+                              borderRadius: 2,
+                              backgroundColor: "#10b981",
+                            }
+                          : {},
                     }}
                   >
-                    {item.icon}
-                  </ListItemIcon>
-                  {drawerWidth > 160 && (
-                    <ListItemText
-                      primary={item.text}
+                    <ListItemIcon
                       sx={{
-                        "& .MuiListItemText-primary": {
-                          color: "#374151",
-                          fontWeight: 500,
-                          fontSize: "0.875rem",
-                        },
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        minWidth: 0,
+                        mr: drawerWidth > 160 ? 2 : 0,
+                        width: drawerWidth <= 160 ? "100%" : "auto",
+                        color: active ? "#059669" : "#10b981",
                       }}
-                    />
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                    {drawerWidth > 160 && (
+                      <ListItemText
+                        primary={item.text}
+                        sx={{
+                          "& .MuiListItemText-primary": {
+                            color: "#374151",
+                            fontWeight: active ? 600 : 500,
+                            fontSize: "0.875rem",
+                          },
+                        }}
+                      />
+                    )}
+                  </ListItem>
+                  {index < 4 && (
+                    <Divider sx={{ mx: 1, my: 1, borderColor: "#f3f4f6" }} />
                   )}
-                </ListItem>
-                {index < 4 && (
-                  <Divider
-                    sx={{ margin: "8px 16px", borderColor: "#f3f4f6" }}
-                  />
-                )}
-              </React.Fragment>
-            ))}
+                </React.Fragment>
+              );
+            })}
           </List>
         </Box>
       </Drawer>
