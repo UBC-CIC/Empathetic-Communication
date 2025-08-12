@@ -1,4 +1,3 @@
-// index.js
 const {
   SecretsManagerClient,
   GetSecretValueCommand,
