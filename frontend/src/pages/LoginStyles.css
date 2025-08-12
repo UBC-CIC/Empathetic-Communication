@@ -1,57 +1,57 @@
 @keyframes gradientAnimation {
-    100% {
-      background-position: 0% 0%;
-    }
-    0% {
-      background-position: 100% 100%;
-    }
+  100% {
+    background-position: 0% 0%;
   }
-  
-  .animatedGradient {
-    background-color: #99DFB2; /* Medicine green */
-    animation: none; /* Remove the gradient animation */
+  0% {
+    background-position: 100% 100%;
   }
-  
-  @keyframes float {
-    0% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(10px); /* Move down by 10px */
-    }
-    100% {
-      transform: translateY(0);
-    }
+}
+
+.animatedGradient {
+  background-color: #99dfb2; /* Medicine green */
+  animation: none; /* Remove the gradient animation */
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0);
   }
-  
-  .heartbeat-image:hover {
-    transform: scale(1.2); /* Slightly enlarge the image on hover */
-    filter: drop-shadow(0 0 10px #ffffff); /* Glowing effect */
+  50% {
+    transform: translateY(10px); /* Move down by 10px */
   }
-  
-  /* Subtle fade-in from left animation for logo text */
-  @keyframes fadeInLeft {
-    from {
-      opacity: 0;
-      transform: translateX(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+  100% {
+    transform: translateY(0);
   }
-  
-  .fadeInLeft {
-    animation: fadeInLeft 600ms ease-out both;
+}
+
+.heartbeat-image:hover {
+  transform: scale(1.2); /* Slightly enlarge the image on hover */
+  filter: drop-shadow(0 0 10px #ffffff); /* Glowing effect */
+}
+
+/* Subtle fade-in from left animation for logo text */
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
   }
-  
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.fadeInLeft {
+  animation: fadeInLeft 600ms ease-out both;
+}
+
+.fadeInLeftDelay {
+  animation: fadeInLeft 700ms ease-out 100ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fadeInLeft,
   .fadeInLeftDelay {
-    animation: fadeInLeft 700ms ease-out 100ms both;
+    animation: none !important;
   }
-  
-  @media (prefers-reduced-motion: reduce) {
-    .fadeInLeft,
-    .fadeInLeftDelay {
-      animation: none !important;
-    }
-  }
+}

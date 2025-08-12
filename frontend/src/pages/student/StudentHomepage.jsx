@@ -235,14 +235,12 @@ export const StudentHomepage = ({ setGroup }) => {
                   px: 4,
                   py: 1.5,
                   color: "white",
-                  boxShadow:
-                    "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0,0,0,0.05)",
+                  boxShadow: "none",
                   transition: "all 0.2s ease-in-out",
                   "&:hover": {
                     backgroundColor: "#059669",
                     transform: "translateY(-2px)",
-                    boxShadow:
-                      "0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)",
+                    boxShadow: "none",
                   },
                 }}
               >
