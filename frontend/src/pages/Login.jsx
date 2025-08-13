@@ -495,7 +495,7 @@ export const Login = () => {
                 flexDirection: "row",
                 textAlign: "left",
                 zIndex: 1,
-                maxWidth: "80%",
+                maxWidth: "100%",
               }}
               className="fadeInLeft"
             >
@@ -504,10 +504,13 @@ export const Login = () => {
                 alt="Heartbeat"
                 className="heartbeat-image"
                 style={{
-                  maxWidth: "20%",
-                  display: "block",
+                  width: "120px", // Fixed width for consistency
+                  maxWidth: "100%",
                   height: "auto",
+                  maxHeight: "120px", // Prevent stretching vertically
+                  display: "block",
                   margin: "0 auto 0px",
+                  objectFit: "contain", // Maintain aspect ratio
                 }}
               />
               <div
@@ -532,6 +535,7 @@ export const Login = () => {
                     textAlign: "left",
                     fontFamily: "Outfit, sans-serif",
                     fontSize: "3rem",
+                    marginLeft: "1rem",
                   }}
                   className="fadeInLeft"
                 >
