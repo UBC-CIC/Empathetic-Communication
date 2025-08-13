@@ -55,10 +55,12 @@ class NovaSonic:
         # Credentials already set by server.js via STS
         pass
 
-    def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1', socket_client=None, voice_id=None, session_id=None):
+    def __init__(self, model_id='amazon.nova-sonic-v1:0', region=None, socket_client=None, voice_id=None, session_id=None):
         self.user_id = os.getenv("USER_ID")  # Get authenticated user ID
         self.model_id = model_id
-        self.region = region
+        # Nova Sonic requires us-east-1, use cross-region inference
+        self.region = 'us-east-1'  # Nova Sonic only available in us-east-1
+        self.deployment_region = region or os.getenv('AWS_REGION', 'us-east-1')  # Actual deployment region
         self.client = None
         self.stream = None
         self.response = None
@@ -409,7 +411,7 @@ class NovaSonic:
                     # Inline diagnosis evaluation
                     if self.llm_completion:
                         try:
-                            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                            bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region)
                             # Get answer key documents from vectorstore
                             try:
                                 # Get DB credentials from environment
@@ -450,6 +452,21 @@ class NovaSonic:
                                 print(json.dumps({"type": "text", "text": completion_msg}), flush=True)
                         except Exception as e:
                             logger.error(f"Diagnosis evaluation failed: {e}")
+                            # Fallback to us-east-1 for Nova models if deployment region fails
+                            if self.deployment_region != 'us-east-1':
+                                try:
+                                    logger.info(f"Retrying diagnosis evaluation with us-east-1 fallback")
+                                    bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                                    body = {"messages": [{"role": "user", "content": [{"text": prompt}]}], "inferenceConfig": {"temperature": 0.1}}
+                                    response = bedrock_client.invoke_model(modelId="amazon.nova-lite-v1:0", contentType="application/json", accept="application/json", body=json.dumps(body))
+                                    result = json.loads(response["body"].read())
+                                    verdict_text = result["output"]["message"]["content"][0]["text"].strip()
+                                    if verdict_text.lower() == "true":
+                                        print(json.dumps({"type": "diagnosis_verdict", "verdict": True}), flush=True)
+                                        completion_msg = "PROPER DIAGNOSIS ACHIEVED. I really appreciate your feedback. You may continue practicing with other patients. Goodbye."
+                                        print(json.dumps({"type": "text", "text": completion_msg}), flush=True)
+                                except Exception as fallback_error:
+                                    logger.error(f"Fallback diagnosis evaluation also failed: {fallback_error}")
                     # Skip diagnosis evaluation for now
                     # if self.llm_completion:
                     #     asyncio.create_task(self._evaluate_diagnosis_async(text))
@@ -490,7 +507,7 @@ class NovaSonic:
     async def _evaluate_empathy(self, student_response, patient_context):
         """LLM-as-a-Judge empathy evaluation using Nova Pro"""
         try:
-            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
             
             evaluation_prompt = f"""
 You are an LLM-as-a-Judge for healthcare empathy evaluation. Assess this pharmacy student's empathetic communication.
@@ -559,6 +576,26 @@ Provide JSON response:
             
         except Exception as e:
             logger.error(f"Empathy evaluation error: {e}")
+            # Fallback to us-east-1 for Nova models if deployment region fails
+            if self.deployment_region != 'us-east-1':
+                try:
+                    logger.info(f"Retrying empathy evaluation with us-east-1 fallback")
+                    bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                    response = bedrock_client.invoke_model(
+                        modelId="amazon.nova-pro-v1:0",
+                        contentType="application/json",
+                        accept="application/json",
+                        body=json.dumps(body)
+                    )
+                    result = json.loads(response["body"].read())
+                    response_text = result["output"]["message"]["content"][0]["text"]
+                    json_start = response_text.find('{')
+                    json_end = response_text.rfind('}') + 1
+                    if json_start != -1 and json_end > json_start:
+                        json_text = response_text[json_start:json_end]
+                        return json.loads(json_text)
+                except Exception as fallback_error:
+                    logger.error(f"Fallback empathy evaluation also failed: {fallback_error}")
             return None
     
     def _build_empathy_feedback(self, evaluation):
@@ -666,7 +703,8 @@ async def handle_stdin(nova_client):
 async def main():
     voice = os.getenv("VOICE_ID")
     session_id = os.getenv("SESSION_ID", "default")
-    nova_client = NovaSonic(voice_id=voice, session_id=session_id)
+    deployment_region = os.getenv("AWS_REGION")
+    nova_client = NovaSonic(voice_id=voice, session_id=session_id, region=deployment_region)
     
     # First listen for any initial configuration from stdin
     # This allows the frontend to set the voice before starting the session
@@ -715,7 +753,7 @@ if __name__ == "__main__":
     async def _get_llm_verdict(self, student_response):
         """Use LLM to determine if student has proper diagnosis"""
         try:
-            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
             
             prompt = f"""
 You are evaluating whether a pharmacy student has properly diagnosed a patient.

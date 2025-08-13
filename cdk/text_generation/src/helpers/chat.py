@@ -65,6 +65,26 @@ def create_dynamodb_history_table(table_name: str) -> bool:
         # Wait until the table exists.
         table.meta.client.get_waiter("table_exists").wait(TableName=table_name)
 
+def get_bedrock_client_with_fallback(model_id: str, region: str = None):
+    """
+    Get Bedrock client with cross-region fallback for Nova models.
+    
+    Args:
+    model_id (str): The Bedrock model ID
+    region (str): Preferred region, defaults to AWS_REGION env var
+    
+    Returns:
+    boto3.client: Bedrock runtime client
+    """
+    deployment_region = region or os.environ.get('AWS_REGION', 'us-east-1')
+    
+    # Nova models require us-east-1, use cross-region inference
+    if 'nova' in model_id.lower():
+        return boto3.client("bedrock-runtime", region_name="us-east-1")
+    
+    # For other models, try deployment region first
+    return boto3.client("bedrock-runtime", region_name=deployment_region)
+
 def get_bedrock_llm(
     bedrock_llm_id: str,
     temperature: float = 0,
@@ -90,10 +110,19 @@ def get_bedrock_llm(
     # Check for optional guardrail configuration
     guardrail_id = os.environ.get('BEDROCK_GUARDRAIL_ID')
     
+    # Use deployment region for Bedrock LLM, with cross-region support for Nova models
+    deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
+    if 'nova' in bedrock_llm_id.lower():
+        # Nova models require us-east-1
+        region = 'us-east-1'
+    else:
+        region = deployment_region
+    
     base_kwargs = {
         "model_id": bedrock_llm_id,
         "model_kwargs": dict(temperature=temperature),
-        "streaming": streaming
+        "streaming": streaming,
+        "region_name": region
     }
     
     if guardrail_id and guardrail_id.strip():
@@ -172,8 +201,9 @@ def get_response(
     empathy_feedback = ""
     if query.strip() and "Greet me" not in query:
         patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+        deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
         nova_client = {
-            "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+            "client": boto3.client("bedrock-runtime", region_name=deployment_region),
             "model_id": "amazon.nova-pro-v1:0"
         }
         empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
@@ -490,8 +520,9 @@ def generate_streaming_response(
     def empathy_async():
         try:
             patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+            deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
             nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
                 "model_id": "amazon.nova-pro-v1:0"
             }
             evaluation = evaluate_empathy(query, patient_context, nova_client)
@@ -889,8 +920,9 @@ def publish_empathy_async(session_id: str, query: str, patient_name: str, patien
             get_cognito_token.current_token = token
             
         patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
+        deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
         nova_client = {
-            "client": boto3.client("bedrock-runtime", region_name="us-east-1"),
+            "client": boto3.client("bedrock-runtime", region_name=deployment_region),
             "model_id": "amazon.nova-pro-v1:0"
         }
         evaluation = evaluate_empathy(query, patient_context, nova_client)
@@ -1026,12 +1058,23 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     
     try:
         logger.info(f"🚀 CALLING NOVA PRO with prompt length: {len(evaluation_prompt)}")
-        response = bedrock_client["client"].invoke_model(
-            modelId=bedrock_client["model_id"],
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps(body)
-        )
+        try:
+            response = bedrock_client["client"].invoke_model(
+                modelId=bedrock_client["model_id"],
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps(body)
+            )
+        except Exception as model_error:
+            logger.warning(f"Nova Pro failed in deployment region, trying us-east-1: {model_error}")
+            # Fallback to us-east-1 for Nova models
+            fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            response = fallback_client.invoke_model(
+                modelId=bedrock_client["model_id"],
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps(body)
+            )
         logger.info(f"✅ NOVA PRO RESPONSE RECEIVED")
         
         result = json.loads(response["body"].read())
