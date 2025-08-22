@@ -620,6 +620,63 @@ exports.handler = async (event) => {
           response.body = JSON.stringify({ error: "Internal server error" });
         }
         break;
+      case "POST /admin/update_user_token_limit":
+        if (event.body) {
+          try {
+            const { user_email, token_limit } = JSON.parse(event.body);
+            if (!user_email || !token_limit || token_limit < 1000) {
+              response.statusCode = 400;
+              response.body = "user_email and token_limit (min 1000) are required";
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              UPDATE "users"
+              SET token_limit = ${token_limit}
+              WHERE user_email = ${user_email};
+            `;
+
+            response.body = JSON.stringify({
+              message: "User token limit updated successfully"
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = "user_email and token_limit are required";
+        }
+        break;
+      case "POST /admin/update_all_token_limits":
+        if (event.body) {
+          try {
+            const { token_limit } = JSON.parse(event.body);
+            if (!token_limit || token_limit < 1000) {
+              response.statusCode = 400;
+              response.body = "token_limit (min 1000) is required";
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              UPDATE "users"
+              SET token_limit = ${token_limit};
+            `;
+
+            response.body = JSON.stringify({
+              message: "All user token limits updated successfully"
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = "token_limit is required";
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }

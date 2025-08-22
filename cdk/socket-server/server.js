@@ -63,6 +63,26 @@ io.on("connection", (socket) => {
   socket.on("start-nova-sonic", async (config = {}) => {
     console.log("🚀 Starting Nova Sonic session for client:", socket.id);
     console.log("🎙️ Voice configuration:", config);
+    
+    // Check user token limits before starting voice session
+    try {
+      const response = await fetch(
+        `${process.env.TEXT_GENERATION_ENDPOINT}/student/check_tokens?session_id=${config.session_id}`,
+        {
+          headers: {
+            Authorization: socket.handshake.auth.token,
+          },
+        }
+      );
+      
+      if (response.status === 429) {
+        const errorData = await response.json();
+        socket.emit("token-limit-exceeded", errorData);
+        return;
+      }
+    } catch (error) {
+      console.warn("Token limit check failed, proceeding:", error.message);
+    }
 
     audioStarted = false;
 

@@ -182,7 +182,58 @@ def get_patient_details(patient_id):
         return None, None, None
 
 
+def check_tokens_handler(event, context):
+    """Simple endpoint to check if user has remaining tokens."""
+    query_params = event.get("queryStringParameters", {})
+    session_id = query_params.get("session_id", "")
+    
+    if not session_id:
+        return {
+            'statusCode': 400,
+            'body': json.dumps("session_id is required")
+        }
+    
+    try:
+        connection = connect_to_db()
+        cur = connection.cursor()
+        cur.execute("""
+            SELECT u.token_limit, u.tokens_used
+            FROM "users" u
+            JOIN "chat_history" ch ON u.user_id = ch.user_id
+            WHERE ch.session_id = %s
+            LIMIT 1;
+        """, (session_id,))
+        result = cur.fetchone()
+        cur.close()
+        
+        if result:
+            token_limit, tokens_used = result
+            if tokens_used >= token_limit:
+                return {
+                    'statusCode': 429,
+                    'body': json.dumps({
+                        "error": "Token limit exceeded",
+                        "tokens_used": tokens_used,
+                        "token_limit": token_limit
+                    })
+                }
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({"status": "ok"})
+        }
+    except Exception as e:
+        logger.error(f"Error checking tokens: {e}")
+        return {
+            'statusCode': 200,
+            'body': json.dumps({"status": "ok"})  # Allow if check fails
+        }
+
 def handler(event, context):
+    # Route to token checker if it's a token check request
+    if event.get('resource') == '/student/check_tokens':
+        return check_tokens_handler(event, context)
+        
     logger.info("Text Generation Lambda function is called!")
     logger.info(f"📝 Event headers: {event.get('headers', {})}")
     initialize_constants()
@@ -265,6 +316,45 @@ def handler(event, context):
     else:
         logger.info(f"Processing student question: {question}")
         student_query = get_student_query(question)
+    
+    # Check user token limits before processing
+    connection = connect_to_db()
+    estimated_tokens = max(1, len(student_query + system_prompt + patient_prompt) // 4)
+    
+    try:
+        cur = connection.cursor()
+        # Get user from session
+        cur.execute("""
+            SELECT u.token_limit, u.tokens_used, u.user_email
+            FROM "users" u
+            JOIN "chat_history" ch ON u.user_id = ch.user_id
+            WHERE ch.session_id = %s
+            LIMIT 1;
+        """, (session_id,))
+        user_result = cur.fetchone()
+        cur.close()
+        
+        if user_result:
+            token_limit, tokens_used, user_email = user_result
+            if (tokens_used + estimated_tokens) > token_limit:
+                logger.warning(f"Token limit exceeded for {user_email}: {tokens_used + estimated_tokens}/{token_limit}")
+                return {
+                    'statusCode': 429,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "*",
+                    },
+                    'body': json.dumps({
+                        "error": "Token limit exceeded",
+                        "tokens_used": tokens_used,
+                        "token_limit": token_limit
+                    })
+                }
+    except Exception as e:
+        logger.error(f"Error checking token limits: {e}")
+        # Continue processing if token check fails
 
     # Check if streaming is requested
     query_params = event.get("queryStringParameters", {})
@@ -372,6 +462,26 @@ def handler(event, context):
     except Exception as e:
         logger.error(f"Error updating session name: {e}")
         session_name = "New Chat"
+    
+    # Update user token usage after successful response
+    try:
+        response_text = response.get("llm_output", "")
+        actual_tokens = max(1, len(student_query + response_text) // 4)
+        cur = connection.cursor()
+        cur.execute("""
+            UPDATE "users" 
+            SET tokens_used = tokens_used + %s
+            WHERE user_id = (
+                SELECT user_id FROM "chat_history" 
+                WHERE session_id = %s LIMIT 1
+            )
+        """, (actual_tokens, session_id))
+        connection.commit()
+        cur.close()
+        logger.info(f"Updated token usage: +{actual_tokens} for session {session_id}")
+    except Exception as e:
+        logger.error(f"Error updating token usage: {e}")
+        connection.rollback()
 
     if stream:
         logger.info("Returning streaming response.")
