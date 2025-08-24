@@ -566,7 +566,6 @@ def generate_response(conversational_rag_chain: object, query: str, session_id: 
             },
         )["answer"]
     except Exception as e:
-        logger.error(f"Error generating response in session {session_id}: {e}")
         raise e
 
 def generate_streaming_response(
@@ -665,7 +664,6 @@ def generate_streaming_response(
         return full_response
 
     except Exception as e:
-        logger.error(f"Error generating streaming response in session {session_id}: {e}")
         error_msg = "I am sorry, I cannot provide a response to that query."
         publish_to_appsync(session_id, {"type": "error", "content": error_msg})
         return error_msg
@@ -696,9 +694,7 @@ def publish_to_appsync(session_id: str, data: dict):
     import json
     import os
     
-    try:
-        logger.info(f"📡 Publishing to AppSync for session: {session_id}, data type: {data.get('type')}")
-        
+    try:        
         appsync_url = os.environ.get('APPSYNC_GRAPHQL_URL')
         if not appsync_url:
             logger.error("AppSync GraphQL URL not available in environment")
@@ -742,10 +738,8 @@ def publish_to_appsync(session_id: str, data: dict):
         response = requests.post(appsync_url, data=json.dumps(payload), headers=headers)
         
         if response.status_code != 200:
-            logger.error(f"AppSync publish failed: {response.status_code} {response.text}")
             logger.error(f"Request payload: {json.dumps(payload, indent=2)}")
         else:
-            logger.info(f"✅ AppSync publish successful for session: {session_id}")
             logger.info(f"📝 Response: {response.text[:200]}...")
         
     except Exception as e:
@@ -787,7 +781,6 @@ def save_message_to_db(session_id: str, student_sent: bool, message_content: str
         
         # Insert message with empathy evaluation
         empathy_json = json.dumps(empathy_evaluation) if empathy_evaluation else None
-        logger.info(f"💾 Saving to DB - Session: {session_id}, Student: {student_sent}, Empathy: {bool(empathy_evaluation)}")
         if empathy_evaluation:
             logger.info(f"💾 Empathy JSON being saved: {empathy_json[:500]}...")
         
@@ -800,7 +793,6 @@ def save_message_to_db(session_id: str, student_sent: bool, message_content: str
         cursor.close()
         conn.close()
         
-        logger.info(f"✅ Message saved to database with empathy evaluation: {bool(empathy_evaluation)}")
         if empathy_evaluation:
             logger.info(f"🧠 Empathy data saved: {json.dumps(empathy_evaluation)[:100]}...")
         
@@ -985,7 +977,6 @@ def build_empathy_feedback(e):
 def publish_empathy_async(session_id: str, query: str, patient_name: str, patient_age: str, patient_prompt: str, token: str = None):
     """Runs evaluate_empathy and publishes markdown to AppSync when ready."""
     try:
-        logger.info(f"🧠 Starting empathy evaluation for session {session_id}")
         
         # Set the token for AppSync publishing
         if token:
@@ -998,17 +989,11 @@ def publish_empathy_async(session_id: str, query: str, patient_name: str, patien
             "model_id": "amazon.nova-pro-v1:0"
         }
         evaluation = evaluate_empathy(query, patient_context, nova_client)
-        logger.info(f"🧠 Empathy evaluation result: {bool(evaluation)}")
         if evaluation:
-            logger.info(f"🧠 Raw evaluation structure: {json.dumps(evaluation, indent=2)[:1000]}...")
-            logger.info(f"📶 Publishing empathy to AppSync: {json.dumps(evaluation)[:200]}...")
             publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(evaluation)})
-            logger.info(f"✅ AppSync publish completed")
         
         # Always save student message with empathy evaluation (or None)
-        logger.info(f"💾 Saving student message with empathy: {bool(evaluation)}")
         save_message_to_db(session_id, True, query, evaluation)
-        logger.info(f"✅ Student message saved")
 
     except Exception as e:
         logger.exception("Async empathy publish failed")
@@ -1129,7 +1114,6 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
     }
     
     try:
-        logger.info(f"🚀 CALLING NOVA PRO with prompt length: {len(evaluation_prompt)}")
         try:
             response = bedrock_client["client"].invoke_model(
                 modelId=bedrock_client["model_id"],
@@ -1147,12 +1131,9 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
                 accept="application/json",
                 body=json.dumps(body)
             )
-        logger.info(f"✅ NOVA PRO RESPONSE RECEIVED")
         
         result = json.loads(response["body"].read())
-        logger.info(f"LLM RESPONSE: {result}")
         response_text = result["output"]["message"]["content"][0]["text"]
-        logger.info(f"🔍 NOVA PRO RAW TEXT: {response_text}")
         
         # Extract and clean JSON from response
         try:

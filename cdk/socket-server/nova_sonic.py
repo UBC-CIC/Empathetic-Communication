@@ -38,14 +38,25 @@ CHUNK_SIZE = 1024
 
 def get_pg_connection():
     global pg_conn
-    if pg_conn is None or pg_conn.closed:
-        pg_conn = psycopg2.connect(
-            dbname=os.getenv("PG_DBNAME"),
-            user=os.getenv("PG_USER"),
-            password=os.getenv("PG_PASSWORD"),
-            host=os.getenv("PG_HOST"),
-            port=os.getenv("PG_PORT")
-        )
+    secrets_client = boto3.client('secretsmanager')
+    db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
+    rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
+
+    if not db_secret_name or not rds_endpoint:
+        logger.warning("Database credentials not available for system prompt retrieval")
+        raise Exception("Database credentials not configured")
+
+    secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
+    secret = json.loads(secret_response['SecretString'])
+
+    # Connect to database
+    pg_conn = psycopg2.connect(
+        host=rds_endpoint,
+        port=secret['port'],
+        database=secret['dbname'],
+        user=secret['username'],
+        password=secret['password']
+    )
     return pg_conn
 
 
@@ -405,9 +416,13 @@ class NovaSonic:
                 print(f"User: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
                 
-                # Evaluate empathy and diagnosis for user messages
-                if text.strip() and not text.lower().startswith("hello"):
-                    asyncio.create_task(self._evaluate_empathy_async(text))
+                # Evaluate empathy for ALL user messages (like text_generation)
+                if text.strip():
+                    logger.info(f"🧠 USER MESSAGE DETECTED - Triggering empathy evaluation for: {text[:30]}...")
+                    print(f"🧠 EMPATHY TRIGGER: {text[:50]}", flush=True)
+                    self._evaluate_empathy_sync(text)
+                else:
+                    logger.info(f"🧠 Empty user text, skipping empathy evaluation")
                     # Inline diagnosis evaluation
                     if self.llm_completion:
                         try:
@@ -477,6 +492,9 @@ class NovaSonic:
             try:
                 normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
                 langchain_chat_history.add_message(self.session_id, normalized_role, text)
+                # Save AI messages to messages table too
+                if self.role and self.role.upper() == "ASSISTANT":
+                    self._save_message_to_db(self.session_id, False, text, None)
                 logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")
             except Exception as e:
                 print(f"❌ Failed to insert message into PostgreSQL: {e}", flush=True)
@@ -494,19 +512,74 @@ class NovaSonic:
 
         # else: ignore other event types
     
-    async def _evaluate_empathy_async(self, user_text):
-        """Evaluate empathy in background and send to frontend"""
+    def _evaluate_empathy_sync(self, user_text):
+        """Synchronous empathy evaluation like chat.py"""
         try:
             patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            empathy_result = await self._evaluate_empathy(user_text, patient_context)
-            if empathy_result:
-                print(json.dumps({"type": "empathy", "content": json.dumps(empathy_result)}), flush=True)
+            bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            
+            evaluation_prompt = f"""
+You are an LLM-as-a-Judge for healthcare empathy evaluation. Assess this pharmacy student's empathetic communication.
+
+**CONTEXT:**
+Patient Context: {patient_context}
+Student Response: {user_text}
+
+**SCORING (1-5 scale):**
+- Perspective-Taking: Understanding patient's viewpoint
+- Emotional Resonance: Warmth and sensitivity
+- Acknowledgment: Validating patient's experience
+- Language & Communication: Clear, respectful language
+- Cognitive Empathy: Understanding thoughts/perspective
+- Affective Empathy: Emotional attunement
+
+**REALISM:** realistic|unrealistic
+
+Provide JSON response:
+{{
+    "perspective_taking": <1-5>,
+    "emotional_resonance": <1-5>,
+    "acknowledgment": <1-5>,
+    "language_communication": <1-5>,
+    "cognitive_empathy": <1-5>,
+    "affective_empathy": <1-5>,
+    "realism_flag": "realistic|unrealistic",
+    "feedback": {{
+        "strengths": ["specific strengths"],
+        "areas_for_improvement": ["specific areas"],
+        "improvement_suggestions": ["actionable suggestions"]
+    }}
+}}
+"""
+            
+            body = {"messages": [{"role": "user", "content": [{"text": evaluation_prompt}]}], "inferenceConfig": {"temperature": 0.1, "maxTokens": 800}}
+            response = bedrock_client.invoke_model(modelId="amazon.nova-pro-v1:0", contentType="application/json", accept="application/json", body=json.dumps(body))
+            result = json.loads(response["body"].read())
+            response_text = result["output"]["message"]["content"][0]["text"]
+            
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+            
+            if json_start != -1 and json_end > json_start:
+                json_text = response_text[json_start:json_end]
+                empathy_result = json.loads(json_text)
+                self._save_message_to_db(self.session_id, True, user_text, empathy_result)
+                empathy_feedback = self._build_empathy_feedback(empathy_result)
+                if empathy_feedback:
+                    print(json.dumps({"type": "empathy", "content": empathy_feedback}), flush=True)
+                    
         except Exception as e:
-            logger.error(f"Empathy evaluation failed: {e}")
+            print(f"Empathy evaluation failed: {e}", flush=True)
+            try:
+                self._save_message_to_db(self.session_id, True, user_text, None)
+            except:
+                pass
     
     async def _evaluate_empathy(self, student_response, patient_context):
         """LLM-as-a-Judge empathy evaluation using Nova Pro"""
+        print(f"🧠 _evaluate_empathy CALLED", flush=True)
         try:
+            print(f"🧠 Creating bedrock client for region: {self.deployment_region or 'us-east-1'}", flush=True)
             bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
             
             evaluation_prompt = f"""
@@ -572,6 +645,7 @@ Provide JSON response:
                 json_text = response_text[json_start:json_end]
                 return json.loads(json_text)
             
+            logger.error(f"Could not parse JSON from empathy response: {response_text[:200]}...")
             return None
             
         except Exception as e:
@@ -599,7 +673,7 @@ Provide JSON response:
             return None
     
     def _build_empathy_feedback(self, evaluation):
-        """Build markdown feedback from evaluation"""
+        """Build markdown feedback from evaluation like text_generation does"""
         if not evaluation:
             return None
         
@@ -611,47 +685,106 @@ Provide JSON response:
             return "⭐" * max(1, min(5, int(n))) + f" ({n}/5)"
         
         # Calculate overall score
-        scores = [evaluation.get(k, 3) for k in ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']]
-        overall = round(sum(scores) / len(scores))
+        pt_score = evaluation.get('perspective_taking', 3)
+        er_score = evaluation.get('emotional_resonance', 3)
+        ack_score = evaluation.get('acknowledgment', 3)
+        lang_score = evaluation.get('language_communication', 3)
+        cognitive_score = evaluation.get('cognitive_empathy', 3)
+        affective_score = evaluation.get('affective_empathy', 3)
+        
+        overall = round((pt_score + er_score + ack_score + lang_score + cognitive_score + affective_score) / 6)
         
         lines = []
-        lines.append("**Empathy Coach:**\n")
-        lines.append(f"**Overall Empathy Score:** {get_level_name(overall)} {stars(overall)}\n")
-        lines.append("**Category Breakdown:**")
-        lines.append(f"• Perspective-Taking: {get_level_name(evaluation.get('perspective_taking', 3))} {stars(evaluation.get('perspective_taking', 3))}")
-        lines.append(f"• Emotional Resonance: {get_level_name(evaluation.get('emotional_resonance', 3))} {stars(evaluation.get('emotional_resonance', 3))}")
-        lines.append(f"• Acknowledgment: {get_level_name(evaluation.get('acknowledgment', 3))} {stars(evaluation.get('acknowledgment', 3))}")
-        lines.append(f"• Language & Communication: {get_level_name(evaluation.get('language_communication', 3))} {stars(evaluation.get('language_communication', 3))}\n")
+        lines.append("**Empathy Coach:**\\n\\n")
+        lines.append(f"**Overall Empathy Score:** {get_level_name(overall)} {stars(overall)}\\n\\n")
+        lines.append("**Category Breakdown:**\\n")
+        lines.append(f"• Perspective-Taking: {get_level_name(pt_score)} {stars(pt_score)}\\n")
+        lines.append(f"• Emotional Resonance/Compassionate Care: {get_level_name(er_score)} {stars(er_score)}\\n")
+        lines.append(f"• Acknowledgment of Patient's Experience: {get_level_name(ack_score)} {stars(ack_score)}\\n")
+        lines.append(f"• Language & Communication: {get_level_name(lang_score)} {stars(lang_score)}\\n\\n")
+        
+        lines.append(f"**Empathy Type Analysis:**\\n")
+        lines.append(f"• Cognitive Empathy (Understanding): {get_level_name(cognitive_score)} {stars(cognitive_score)}\\n")
+        lines.append(f"• Affective Empathy (Feeling): {get_level_name(affective_score)} {stars(affective_score)}\\n\\n")
         
         realism = evaluation.get('realism_flag', 'realistic')
         realism_icon = "✅" if realism == "realistic" else ""
-        lines.append(f"**Realism Assessment:** Your response is {realism} {realism_icon}\n")
+        lines.append(f"**Realism Assessment:** Your response is {realism} {realism_icon}\\n\\n")
+        
+        # Add judge reasoning if available
+        judge_reasoning = evaluation.get('judge_reasoning', {})
+        if judge_reasoning and 'overall_assessment' in judge_reasoning:
+            assessment = judge_reasoning['overall_assessment']
+            assessment = assessment.replace("The student's response", "Your response")
+            assessment = assessment.replace("The student", "You")
+            assessment = assessment.replace("demonstrates", "show")
+            assessment = assessment.replace("fails to", "could better")
+            assessment = assessment.replace("lacks", "would benefit from more")
+            lines.append(f"**Coach Assessment:**\\n")
+            lines.append(f"{assessment}\\n\\n")
         
         feedback = evaluation.get('feedback', {})
         if isinstance(feedback, dict):
             strengths = feedback.get('strengths', [])
             if strengths:
-                lines.append("**Strengths:**")
+                lines.append("**Strengths:**\\n")
                 for s in strengths:
-                    lines.append(f"• {s}")
-                lines.append("")
+                    lines.append(f"• {s}\\n")
+                lines.append("\\n")
             
             areas = feedback.get('areas_for_improvement', [])
             if areas:
-                lines.append("**Areas for improvement:**")
+                lines.append("**Areas for improvement:**\\n")
                 for a in areas:
-                    lines.append(f"• {a}")
-                lines.append("")
+                    lines.append(f"• {a}\\n")
+                lines.append("\\n")
+            
+            # Add why realistic/unrealistic
+            if 'why_realistic' in feedback and feedback['why_realistic']:
+                lines.append(f"**Your response is {realism} because:** {feedback['why_realistic']}\\n\\n")
+            elif 'why_unrealistic' in feedback and feedback['why_unrealistic']:
+                lines.append(f"**Your response is {realism} because:** {feedback['why_unrealistic']}\\n\\n")
             
             suggestions = feedback.get('improvement_suggestions', [])
             if suggestions:
-                lines.append("**Coach Recommendations:**")
+                lines.append("**Coach Recommendations:**\\n")
                 for s in suggestions:
-                    lines.append(f"• {s}")
-                lines.append("")
+                    lines.append(f"• {s}\\n")
+                lines.append("\\n")
+            
+            # Add alternative phrasing
+            if 'alternative_phrasing' in feedback and feedback['alternative_phrasing']:
+                lines.append(f"**Coach-Recommended Approach:** *{feedback['alternative_phrasing']}*\\n\\n")
         
-        lines.append("---\n")
-        return "\n".join(lines)
+        lines.append("---\\n\\n")
+        return "".join(lines)
+    
+    def _save_message_to_db(self, session_id, student_sent, message_content, empathy_evaluation=None):
+        """Save message with empathy evaluation to PostgreSQL"""
+        try:
+            logger.info(f"💾 Connecting to database...")
+            conn = get_pg_connection()
+            cursor = conn.cursor()
+            
+            empathy_json = json.dumps(empathy_evaluation) if empathy_evaluation else None
+            logger.info(f"💾 Executing INSERT with empathy_json length: {len(empathy_json) if empathy_json else 0}")
+            
+            cursor.execute(
+                'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW())',
+                (session_id, student_sent, message_content, empathy_json)
+            )
+            
+            conn.commit()
+            cursor.close()
+            
+            if empathy_evaluation:
+                logger.info(f"💾 Empathy data saved to DB successfully")
+            else:
+                logger.info(f"💾 Message saved to DB without empathy data")
+                
+        except Exception as e:
+            logger.error(f"Error saving message to database: {e}")
+            logger.exception("Full DB save error:")
 
 
 
