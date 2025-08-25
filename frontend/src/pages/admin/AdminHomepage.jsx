@@ -4,6 +4,7 @@ import AdminHeader from "../../components/AdminHeader";
 import AdminInstructors from "./AdminInstructors";
 import AdminSimulationGroups from "./AdminSimulationGroups";
 import AdminCreateSimulationGroup from "./AdminCreateSimulationGroup";
+import AISettings from "./AISettings";
 import PageContainer from "../Container";
 import InstructorDetails from "./InstructorDetails";
 import GroupDetails from "./GroupDetails";
@@ -48,6 +49,8 @@ export const AdminHomepage = () => {
             setSelectedComponent={setSelectedComponent}
           />
         );
+      case "AISettings":
+        return <AISettings />;
       default:
         return (
           <AdminInstructors setSelectedInstructor={setSelectedInstructor} />

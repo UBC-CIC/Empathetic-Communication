@@ -403,10 +403,14 @@ exports.handler = async (event) => {
               "carlos",
             ];
 
+            function getRandomVoice(voices) {
+              return voices[Math.floor(Math.random() * voices.length)];
+            }
+
             voice_id =
               patient_gender.toLowerCase() === "female"
-                ? randomChoice(feminine_voices)
-                : randomChoice(masculine_voices);
+                ? getRandomVoice(feminine_voices)
+                : getRandomVoice(masculine_voices);
 
             // Insert new patient into the "patients" table with age and gender
             const newPatient = await sqlConnection`

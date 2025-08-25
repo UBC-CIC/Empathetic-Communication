@@ -381,16 +381,18 @@ export const AdminInstructors = () => {
             )}
             <TableFooter>
               <TableRow>
-                <TablePagination
-                  rowsPerPageOptions={[5, 10, 25]}
-                  component="div"
-                  count={filteredRows.length}
-                  rowsPerPage={rowsPerPage}
-                  page={page}
-                  onPageChange={handleChangePage}
-                  onRowsPerPageChange={handleChangeRowsPerPage}
-                  sx={{ fontSize: 14, minWidth: 400 }}
-                />
+                <TableCell colSpan={3} sx={{ border: 0, p: 0 }}>
+                  <TablePagination
+                    rowsPerPageOptions={[5, 10, 25]}
+                    component="div"
+                    count={filteredRows.length}
+                    rowsPerPage={rowsPerPage}
+                    page={page}
+                    onPageChange={handleChangePage}
+                    onRowsPerPageChange={handleChangeRowsPerPage}
+                    sx={{ fontSize: 14, minWidth: 400 }}
+                  />
+                </TableCell>
               </TableRow>
             </TableFooter>
           </Table>

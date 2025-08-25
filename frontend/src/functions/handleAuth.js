@@ -26,15 +26,17 @@ export async function retrieveJwtToken(setJwtToken) {
     // console.log("session", session);
 
     // Check if the token is close to expiration
-    const expirationTime = session.credentials.expiration * 1000; // Milliseconds
-    const currentTime = new Date().getTime();
+    if (session.credentials && session.credentials.expiration) {
+      const expirationTime = session.credentials.expiration * 1000; // Milliseconds
+      const currentTime = new Date().getTime();
 
-    if (expirationTime - currentTime < 2700000) {
-      // 45 minutes
-      await fetchAuthSession();
-      idToken = await session.tokens.idToken
-      token = await session.tokens.accessToken.toString();
-      setJwtToken(token);
+      if (expirationTime - currentTime < 2700000) {
+        // 45 minutes
+        await fetchAuthSession();
+        idToken = await session.tokens.idToken
+        token = await session.tokens.accessToken.toString();
+        setJwtToken(idToken);
+      }
     }
   } catch (e) {
     console.log("error getting token: ", e);

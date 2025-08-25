@@ -123,6 +123,7 @@ export class EcsSocketStack extends Stack {
         SM_COGNITO_CREDENTIALS: apiServiceStack.secret.secretName,
         RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint,
         AWS_REGION: this.region,
+        AWS_DEFAULT_REGION: this.region,
         COGNITO_USER_POOL_ID: apiServiceStack.getUserPoolId(),
         COGNITO_CLIENT_ID: apiServiceStack.getUserPoolClientId(),
         IDENTITY_POOL_ID: apiServiceStack.getIdentityPoolId(),

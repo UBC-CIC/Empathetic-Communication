@@ -502,7 +502,181 @@ exports.handler = async (event) => {
           });
         }
         break;
+      case "GET /admin/system_prompts":
+        try {
+          // Get the latest system prompt from history table
+          const latestPrompt = await sqlConnectionTableCreator`
+            SELECT prompt_content, created_at
+            FROM "system_prompt_history"
+            ORDER BY created_at DESC
+            LIMIT 1;
+          `;
 
+          // Get prompt history excluding the latest one
+          const promptHistory = await sqlConnectionTableCreator`
+            SELECT history_id, prompt_content, created_at
+            FROM "system_prompt_history"
+            ORDER BY created_at DESC
+            OFFSET 1;
+          `;
+
+          response.body = JSON.stringify({
+            current_prompt: latestPrompt[0]?.prompt_content || "",
+            history: promptHistory
+          });
+        } catch (err) {
+          response.statusCode = 500;
+          console.log(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "POST /admin/update_system_prompt":
+        if (event.body) {
+          try {
+            const { prompt_content } = JSON.parse(event.body);
+            if (!prompt_content || !prompt_content.trim()) {
+              response.statusCode = 400;
+              response.body = "prompt_content is required";
+              break;
+            }
+
+            // Insert new prompt into history (created_by removed)
+            await sqlConnectionTableCreator`
+              INSERT INTO "system_prompt_history" (prompt_content)
+              VALUES (${prompt_content});
+            `;
+
+            response.body = JSON.stringify({
+              message: "System prompt updated successfully"
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = "prompt_content is required";
+        }
+        break;
+      case "POST /admin/restore_system_prompt":
+        try {
+          // Prefer query param history_id; fallback to body with prompt_content for backward compatibility
+          const historyId = event.queryStringParameters && event.queryStringParameters.history_id
+            ? event.queryStringParameters.history_id
+            : null;
+
+          if (historyId) {
+            // Fetch the prompt_content for the given history_id and insert as new active prompt
+            const rows = await sqlConnectionTableCreator`
+              SELECT prompt_content
+              FROM "system_prompt_history"
+              WHERE history_id = ${historyId}
+              LIMIT 1;
+            `;
+
+            const fromHistory = rows[0]?.prompt_content;
+            if (!fromHistory) {
+              response.statusCode = 404;
+              response.body = JSON.stringify({ error: "History entry not found" });
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              INSERT INTO "system_prompt_history" (prompt_content)
+              VALUES (${fromHistory});
+            `;
+
+            response.body = JSON.stringify({
+              message: "System prompt restored successfully"
+            });
+            break;
+          }
+
+          // Fallback: body-based restore (no created_by)
+          if (event.body) {
+            const { prompt_content } = JSON.parse(event.body);
+            if (!prompt_content || !prompt_content.trim()) {
+              response.statusCode = 400;
+              response.body = "prompt_content is required";
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              INSERT INTO "system_prompt_history" (prompt_content)
+              VALUES (${prompt_content});
+            `;
+
+            response.body = JSON.stringify({
+              message: "System prompt restored successfully"
+            });
+          } else {
+            response.statusCode = 400;
+            response.body = "history_id or prompt_content is required";
+          }
+        } catch (err) {
+          response.statusCode = 500;
+          console.log(err);
+          response.body = JSON.stringify({ error: "Internal server error" });
+        }
+        break;
+      case "POST /admin/update_user_token_limit":
+        if (event.body) {
+          try {
+            const { user_email, token_limit } = JSON.parse(event.body);
+            if (!user_email || !token_limit || token_limit < 1000) {
+              response.statusCode = 400;
+              response.body = "user_email and token_limit (min 1000) are required";
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              UPDATE "users"
+              SET token_limit = ${token_limit}
+              WHERE user_email = ${user_email};
+            `;
+
+            response.body = JSON.stringify({
+              message: "User token limit updated successfully"
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = "user_email and token_limit are required";
+        }
+        break;
+      case "POST /admin/update_all_token_limits":
+        if (event.body) {
+          try {
+            const { token_limit } = JSON.parse(event.body);
+            if (!token_limit || token_limit < 1000) {
+              response.statusCode = 400;
+              response.body = "token_limit (min 1000) is required";
+              break;
+            }
+
+            await sqlConnectionTableCreator`
+              UPDATE "users"
+              SET token_limit = ${token_limit};
+            `;
+
+            response.body = JSON.stringify({
+              message: "All user token limits updated successfully"
+            });
+          } catch (err) {
+            response.statusCode = 500;
+            console.log(err);
+            response.body = JSON.stringify({ error: "Internal server error" });
+          }
+        } else {
+          response.statusCode = 400;
+          response.body = "token_limit is required";
+        }
+        break;
       default:
         throw new Error(`Unsupported route: "${pathData}"`);
     }
