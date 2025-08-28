@@ -3,7 +3,11 @@ import { Construct } from "constructs";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Fn } from "aws-cdk-lib";
-import { AwsCustomResource, AwsCustomResourcePolicy, PhysicalResourceId } from "aws-cdk-lib/custom-resources";
+import {
+  AwsCustomResource,
+  AwsCustomResourcePolicy,
+  PhysicalResourceId,
+} from "aws-cdk-lib/custom-resources";
 
 export class VpcStack extends Stack {
   public readonly vpc: ec2.Vpc;
@@ -13,15 +17,16 @@ export class VpcStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const existingVpcId: string = ""; // CHANGE IF DEPLOYING WITH EXISTING VPC
+    const existingVpcId: string = "vpc-0515a0d6ee4abcd8e"; // CHANGE IF DEPLOYING WITH EXISTING VPC
 
     if (existingVpcId !== "") {
-      const AWSControlTowerStackSet = ""; // CHANGE TO YOUR CONTROL TOWER STACK SET
+      const AWSControlTowerStackSet =
+        "StackSet-AWSControlTowerBP-VPC-ACCOUNT-FACTORY-V1-df80d055-f27d-4b9a-917f-f0db2da2ad91"; // CHANGE TO YOUR CONTROL TOWER STACK SET
       const existingPublicSubnetID: string = ""; // CHANGE IF DEPLOYING WITH EXISTING PUBLIC SUBNET
 
       const vciPrefix = "VIRTUAL-CARE-INTERACTION-production";
 
-      this.vpcCidrString = "172.31.94.0/20";
+      this.vpcCidrString = "172.31.128.0/20";
 
       // VPC for application
       this.vpc = ec2.Vpc.fromVpcAttributes(this, `${id}-Vpc`, {
@@ -33,19 +38,15 @@ export class VpcStack extends Stack {
           Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3AID`),
         ],
         privateSubnetRouteTableIds: [
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet1ARouteTable`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet2ARouteTable`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3ARouteTable`),
-        ],
-        isolatedSubnetIds: [
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet1AID`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet2AID`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3AID`),
-        ],
-        isolatedSubnetRouteTableIds: [
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet1ARouteTable`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet2ARouteTable`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3ARouteTable`),
+          Fn.importValue(
+            `${AWSControlTowerStackSet}-PrivateSubnet1ARouteTable`
+          ),
+          Fn.importValue(
+            `${AWSControlTowerStackSet}-PrivateSubnet2ARouteTable`
+          ),
+          Fn.importValue(
+            `${AWSControlTowerStackSet}-PrivateSubnet3ARouteTable`
+          ),
         ],
         vpcCidrBlock: Fn.importValue(`${AWSControlTowerStackSet}-VPCCIDR`),
       }) as ec2.Vpc;
@@ -58,7 +59,9 @@ export class VpcStack extends Stack {
       ];
 
       if (existingPublicSubnetID === "") {
-        console.log("No public subnet exists. Creating new public subnet, IGW, and NAT GW.");
+        console.log(
+          "No public subnet exists. Creating new public subnet, IGW, and NAT GW."
+        );
 
         // Create a public subnet
         const publicSubnet = new ec2.Subnet(this, `PublicSubnet`, {
@@ -69,7 +72,11 @@ export class VpcStack extends Stack {
         });
 
         // Create an Internet Gateway and attach it to the VPC
-        const internetGateway = new ec2.CfnInternetGateway(this, `InternetGateway`, {});
+        const internetGateway = new ec2.CfnInternetGateway(
+          this,
+          `InternetGateway`,
+          {}
+        );
         new ec2.CfnVPCGatewayAttachment(this, "VPCGatewayAttachment", {
           vpcId: this.vpc.vpcId,
           internetGatewayId: internetGateway.ref,
@@ -110,31 +117,33 @@ export class VpcStack extends Stack {
           natGatewayId: natGateway.ref,
         });
       } else {
-        console.log(`Public subnet already exists. Skipping creation of public resources.`);
+        console.log(
+          `Public subnet already exists. Skipping creation of public resources.`
+        );
       }
 
-      // Add interface endpoints for private isolated subnets
+      // Add interface endpoints for private subnets
       this.vpc.addInterfaceEndpoint("SSM Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SSM,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         privateDnsEnabled: false, // Disable private DNS to avoid conflicts
       });
 
       this.vpc.addInterfaceEndpoint("Secrets Manager Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         privateDnsEnabled: false, // Disable private DNS to avoid conflicts
       });
 
       this.vpc.addInterfaceEndpoint("RDS Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.RDS,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         privateDnsEnabled: false, // Disable private DNS to avoid conflicts
       });
 
       this.vpc.addInterfaceEndpoint("Glue Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.GLUE,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         privateDnsEnabled: false, // Disable private DNS to avoid conflicts
       });
 

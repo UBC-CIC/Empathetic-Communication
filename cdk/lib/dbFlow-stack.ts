@@ -5,6 +5,7 @@ import { Duration } from 'aws-cdk-lib';
 // Service files import
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 
 // Stack import
 import { VpcStack } from './vpc-stack';
@@ -92,6 +93,7 @@ export class DBFlowStack extends Stack {
                 DB_PROXY: db.secretPathTableCreator.secretName, // Proxy Secret
             },
             vpc: db.dbInstance.vpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
             code: lambda.Code.fromAsset("lambda/db_setup"),
             layers: [psycopgLambdaLayer],
             role: lambdaRole,

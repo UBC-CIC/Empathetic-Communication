@@ -10,4 +10,12 @@ export default defineConfig({
     global: 'globalThis',
     'process.env': {},
   },
+  resolve: {
+    alias: {
+      './runtimeConfig': './runtimeConfig.browser',
+    },
+  },
+  optimizeDeps: {
+    include: ['aws-amplify'],
+  },
 })

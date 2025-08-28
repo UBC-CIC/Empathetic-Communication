@@ -77,7 +77,7 @@ export class DatabaseStack extends Stack {
         this.dbInstance = new rds.DatabaseInstance(this, `${id}-database`, {
             vpc: vpcStack.vpc,
             vpcSubnets: {
-                subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+                subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
             },
             engine: rds.DatabaseInstanceEngine.postgres({
                 version: rds.PostgresEngineVersion.VER_16_3,

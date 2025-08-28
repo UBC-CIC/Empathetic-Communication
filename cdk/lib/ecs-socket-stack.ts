@@ -135,8 +135,8 @@ export class EcsSocketStack extends Stack {
       cluster,
       taskDefinition: taskDef,
       desiredCount: 1,
-      assignPublicIp: true,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      assignPublicIp: false,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
     // 5.1) Allow the NLB (and CloudFront via NLB) to reach your service on port 80
@@ -148,7 +148,8 @@ export class EcsSocketStack extends Stack {
     // 6) Network Load Balancer on TCP 80
     const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
       vpc,
-      internetFacing: true,
+      internetFacing: false,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
     const listener = nlb.addListener("TcpListener", {
       port: 80,
