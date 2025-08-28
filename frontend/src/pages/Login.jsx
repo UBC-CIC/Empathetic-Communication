@@ -34,16 +34,8 @@ import "react-toastify/dist/ReactToastify.css";
 import PageContainer from "./Container";
 
 // MUI theming
-import { createTheme, ThemeProvider } from "@mui/material/styles";
-const { palette } = createTheme();
-const { augmentColor } = palette;
-const createColor = (mainColor) => augmentColor({ color: { main: mainColor } });
-const theme = createTheme({
-  palette: {
-    primary: createColor("#36bd78"),
-    bg: createColor("#F8F9FD"),
-  },
-});
+import { ThemeProvider } from "@mui/material/styles";
+import theme from "../Theme.jsx";
 
 export const Login = () => {
   // auth account variables

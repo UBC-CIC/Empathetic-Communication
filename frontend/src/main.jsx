@@ -4,7 +4,7 @@ import App from "./App.jsx";
 import "./index.css";
 // mui theming
 import { ThemeProvider } from "@mui/material/styles";
-import theme from "./Theme";
+import theme from "./Theme.jsx";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
