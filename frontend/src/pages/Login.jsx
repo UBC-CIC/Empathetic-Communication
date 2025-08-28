@@ -454,7 +454,6 @@ export const Login = () => {
           >
             <div
               style={{
-                textAlign: "center",
                 position: "relative",
                 display: "flex",
                 flexDirection: "row",
@@ -494,12 +493,11 @@ export const Login = () => {
                   sx={{
                     color: "#1f2937",
                     fontWeight: "550",
-                    fontSize: "clamp(1.75rem, 3.5vw, 3rem)",
+                    fontSize: "3rem",
                     lineHeight: "1.1",
                     marginBottom: "12px",
                     textAlign: "left",
                     fontFamily: "Outfit, sans-serif",
-                    fontSize: "3rem",
                     marginLeft: "1rem",
                   }}
                   className="fadeInLeft"
@@ -511,12 +509,11 @@ export const Login = () => {
                   sx={{
                     color: "#1f2937",
                     fontWeight: "500",
-                    fontSize: "clamp(1.25rem, 2.5vw, 2rem)",
+                    fontSize: "1.5rem",
                     lineHeight: "1.2",
                     marginBottom: "8px",
                     textAlign: "left",
                     fontFamily: "Outfit, sans-serif",
-                    fontSize: "1.5rem",
                   }}
                   className="fadeInLeftDelay"
                 >
