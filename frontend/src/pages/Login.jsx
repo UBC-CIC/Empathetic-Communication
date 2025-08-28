@@ -1,7 +1,6 @@
 import { useState } from "react";
 
-// logo
-import heartbeatImage from "../assets/heartbeat.png";
+
 
 import "./LoginStyles.css"; // Adjust the path if necessary
 
@@ -22,7 +21,6 @@ import {
   CssBaseline,
   TextField,
   Link,
-  Paper,
   Grid,
   Box,
   Typography,
@@ -35,7 +33,7 @@ import PageContainer from "./Container";
 
 // MUI theming
 import { ThemeProvider } from "@mui/material/styles";
-import theme from "../Theme.jsx";
+import theme from "../Theme";
 
 export const Login = () => {
   // auth account variables
