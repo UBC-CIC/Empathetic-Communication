@@ -125,7 +125,7 @@ export class DatabaseStack extends Stack {
             securityGroup.addIngressRule(
                 ec2.Peer.ipv4(vpcStack.vpcCidrString),
                 ec2.Port.tcp(5432),
-                "Allow PostgreSQL traffic from public subnets"
+                "Allow PostgreSQL traffic from VPC"
             );
         });
 

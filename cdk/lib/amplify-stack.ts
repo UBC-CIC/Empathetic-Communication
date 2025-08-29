@@ -38,6 +38,7 @@ export class AmplifyStack extends cdk.Stack {
               preBuild:
                 commands:
                   - pwd
+                  - nvm use 18
                   - npm ci
               build:
                 commands:

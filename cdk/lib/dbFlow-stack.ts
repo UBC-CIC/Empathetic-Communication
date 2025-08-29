@@ -98,5 +98,28 @@ export class DBFlowStack extends Stack {
             layers: [psycopgLambdaLayer],
             role: lambdaRole,
         });
+
+        // Create security group for Lambda to connect to RDS
+        const lambdaSecurityGroup = new ec2.SecurityGroup(this, `${id}-lambda-sg`, {
+            vpc: vpcStack.vpc,
+            description: 'Security group for Lambda to access RDS',
+            allowAllOutbound: true
+        });
+
+        // Add the security group to Lambda
+        initializerLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['rds-db:connect'],
+                resources: ['*']
+            })
+        );
+
+        // Override Lambda security groups
+        const cfnFunction = initializerLambda.node.defaultChild as lambda.CfnFunction;
+        cfnFunction.vpcConfig = {
+            securityGroupIds: [lambdaSecurityGroup.securityGroupId],
+            subnetIds: vpcStack.vpc.privateSubnets.map(subnet => subnet.subnetId)
+        };
     }
 }
