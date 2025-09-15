@@ -127,6 +127,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   // Real-time empathy chunks from AppSync stream
   const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
+  
+  // Handle empathy data from voice conversations
+  const handleVoiceEmpathyData = (empathyData) => {
+    console.log('🧠 Received empathy data from voice:', empathyData);
+    setRealtimeEmpathy(prev => [...prev, empathyData]);
+  };
 
   // Remove global AppSync subscription approach; we'll subscribe per request
   // const streamSubRef = useRef(null);
@@ -346,7 +352,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       };
 
       const handleDiagnosisComplete = (data) => {
-        alert("Congratulations! You have achieved the proper diagnosis.");
+        alert("Session completed successfully!");
       };
 
       // Clean up existing listeners

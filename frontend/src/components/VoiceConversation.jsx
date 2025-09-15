@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, VolumeUp, VolumeOff, Close, Phone, PhoneDisabled } from '@mui/icons-material';
 import { IconButton, Paper, Typography, Box, Dialog, CircularProgress, Chip } from '@mui/material';
 
-const VoiceConversation = ({ open, onClose, patientContext = "" }) => {
+const VoiceConversation = ({ open, onClose, patientContext = "", onEmpathyData }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -86,6 +86,27 @@ const VoiceConversation = ({ open, onClose, patientContext = "" }) => {
         setConnectionStatus('error');
       });
       
+      // Handle empathy feedback from voice conversations
+      websocketRef.current.on('empathy-feedback', (data) => {
+        console.log('🧠 Empathy feedback received:', data.content?.substring(0, 100));
+        handleVoiceMessage({ type: 'empathy_feedback', content: data.content });
+      });
+      
+      // Handle text messages from voice (transcriptions)
+      websocketRef.current.on('text-message', (data) => {
+        console.log('📝 Text message from voice:', data.text);
+        handleVoiceMessage({ type: 'text_message', text: data.text });
+      });
+      
+      // Handle empathy data from voice conversations
+      websocketRef.current.on('empathy-data', (data) => {
+        console.log('🧠 Empathy data from voice:', data);
+        // Call callback if provided
+        if (onEmpathyData) {
+          onEmpathyData(data);
+        }
+      });
+      
     } catch (error) {
       console.error('Error getting auth token:', error);
       setConnectionStatus('error');
@@ -160,6 +181,24 @@ const VoiceConversation = ({ open, onClose, patientContext = "" }) => {
         setConversationLog(prev => [...prev, {
           type: 'system',
           message: 'Voice conversation ended.',
+          timestamp: new Date()
+        }]);
+        break;
+        
+      case 'empathy_feedback':
+        console.log('🧠 Empathy feedback received');
+        setConversationLog(prev => [...prev, {
+          type: 'empathy',
+          message: data.content,
+          timestamp: new Date()
+        }]);
+        break;
+        
+      case 'text_message':
+        console.log('📝 Text message from voice session');
+        setConversationLog(prev => [...prev, {
+          type: 'transcription',
+          message: data.text,
           timestamp: new Date()
         }]);
         break;
@@ -465,13 +504,17 @@ const VoiceConversation = ({ open, onClose, patientContext = "" }) => {
                         fontWeight: entry.type === 'student' ? 'bold' : 'normal',
                         color: entry.type === 'patient' ? 'primary.main' : 
                                entry.type === 'error' ? 'error.main' : 
-                               entry.type === 'system' ? 'text.secondary' : 'text.primary'
+                               entry.type === 'system' ? 'text.secondary' :
+                               entry.type === 'empathy' ? 'success.main' :
+                               entry.type === 'transcription' ? 'info.main' : 'text.primary'
                       }}
                     >
                       <strong>
                         {entry.type === 'student' ? 'You: ' : 
                          entry.type === 'patient' ? 'Patient: ' : 
-                         entry.type === 'system' ? 'System: ' : 'Error: '}
+                         entry.type === 'system' ? 'System: ' :
+                         entry.type === 'empathy' ? 'Empathy Coach: ' :
+                         entry.type === 'transcription' ? 'Transcript: ' : 'Error: '}
                       </strong>
                       {entry.message}
                     </Typography>
