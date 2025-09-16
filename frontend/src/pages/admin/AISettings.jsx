@@ -77,8 +77,8 @@ const AISettings = () => {
   const DEFAULT_EMPATHY_PROMPT = `You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacy student's empathetic communication.
 
 **EVALUATION CONTEXT:**
-Patient Context: {patient_context}
-Student Response: {user_text}
+Patient Context: \{patient_context\}
+Student Response: \{user_text\}
 
 **JUDGE INSTRUCTIONS:**
 As an expert judge, evaluate this response across multiple empathy dimensions. For each criterion, provide:
