@@ -141,12 +141,18 @@ io.on("connection", (socket) => {
             else if (parsed.type === "debug") {
               console.log("🐞 NOVA DEBUG:", parsed.text);
             }
+            // ─ Voice empathy evaluation results ──────────────────────────
+            else if (parsed.type === "voice_empathy_result") {
+              console.log("🎤 VOICE EMPATHY RESULT:", parsed.content?.substring(0, 100));
+              socket.emit("voice-empathy-result", { content: parsed.content });
+            }
             // ─ Text messages ─────────────────────────────────────────────
             else if (parsed.type === "text") {
               console.log("💬 NOVA TEXT:", parsed.text);
               socket.emit("text-message", { text: parsed.text });
               if (parsed.text.includes("Nova Sonic ready")) {
                 novaReady = true;
+                console.log("✅ NOVA SONIC READY - Voice empathy evaluation enabled");
                 socket.emit("nova-started", {
                   status: "Nova Sonic session started",
                 });
@@ -154,15 +160,21 @@ io.on("connection", (socket) => {
             }
             // ─ Empathy feedback ──────────────────────────────────────────
             else if (parsed.type === "empathy") {
-              console.log("🧠 EMPATHY FEEDBACK:", parsed.content?.substring(0, 100));
+              console.log("🧠 VOICE EMPATHY FEEDBACK:", parsed.content?.substring(0, 100));
               socket.emit("empathy-feedback", { content: parsed.content });
             }
             // ─ Raw empathy data for frontend processing ──────────────────────────────────────────
             else if (parsed.type === "empathy_data") {
-              console.log("🧠 RAW EMPATHY DATA:", parsed.content?.substring(0, 100));
+              console.log("🧠 RAW VOICE EMPATHY DATA RECEIVED:", parsed.content?.substring(0, 100));
               try {
                 const empathyData = JSON.parse(parsed.content);
-                // Transform to match StudentChat format
+                console.log("🧠 PARSED EMPATHY DATA:", {
+                  empathy_score: empathyData.empathy_score,
+                  perspective_taking: empathyData.perspective_taking,
+                  emotional_resonance: empathyData.emotional_resonance
+                });
+                
+                // Transform to match StudentChat format with voice indicator
                 const transformedData = {
                   overall_score: empathyData.empathy_score || 3,
                   avg_perspective_taking: empathyData.perspective_taking || 3,
@@ -171,7 +183,7 @@ io.on("connection", (socket) => {
                   avg_language_communication: empathyData.language_communication || 3,
                   avg_cognitive_empathy: empathyData.cognitive_empathy || 3,
                   avg_affective_empathy: empathyData.affective_empathy || 3,
-                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your responses are generally realistic" : "Your response is unrealistic",
+                  realism_assessment: empathyData.realism_flag === "realistic" ? "Your voice responses are generally realistic" : "Your voice response is unrealistic",
                   realism_explanation: empathyData.judge_reasoning?.realism_justification || "",
                   coach_assessment: empathyData.judge_reasoning?.overall_assessment || "",
                   strengths: empathyData.feedback?.strengths || [],
@@ -179,10 +191,13 @@ io.on("connection", (socket) => {
                   recommendations: empathyData.feedback?.improvement_suggestions || [],
                   recommended_approach: empathyData.feedback?.alternative_phrasing || "",
                   timestamp: Date.now(),
+                  source: "voice", // Mark as voice-generated empathy data
                 };
+                console.log("🧠 SENDING VOICE EMPATHY DATA TO FRONTEND - Score:", transformedData.overall_score);
                 socket.emit("empathy-data", transformedData);
               } catch (e) {
-                console.error("Failed to parse empathy data:", e);
+                console.error("❌ Failed to parse voice empathy data:", e);
+                console.error("❌ Raw empathy content:", parsed.content);
               }
             }
             // ─ Diagnosis completion ──────────────────────────────────────
@@ -206,12 +221,19 @@ io.on("connection", (socket) => {
               });
             }
             // Handle empathy feedback in plain text fallback
-            if (line.includes("**Empathy Coach:**")) {
+            if (line.includes("**Empathy Coach:**") || line.includes("**🎤 Voice Empathy Coach:**")) {
               socket.emit("empathy-feedback", { content: line });
             }
             // Forward voice transcriptions to text chat for empathy evaluation
             if (line.includes("User:") || line.includes("Assistant:")) {
+              console.log("📝 FORWARDING VOICE TEXT:", line.substring(0, 50));
               socket.emit("text-message", { text: line });
+            }
+            // Handle empathy evaluation status updates
+            if (line.includes("MANUAL EMPATHY:") || line.includes("🧠") || line.includes("VOICE EMPATHY:")) {
+              console.log("🧠 EMPATHY STATUS:", line);
+              // Forward empathy status to frontend for debugging
+              socket.emit("empathy-status", { message: line, timestamp: Date.now() });
             }
             // Handle diagnosis completion in plain text fallback
             if (line.includes("SESSION COMPLETED")) {
@@ -222,11 +244,30 @@ io.on("connection", (socket) => {
     });
 
     novaProcess.stderr.on("data", (data) => {
-      console.warn("⚠️ Nova stderr:", data.toString().trim());
+      const stderrText = data.toString().trim();
+      console.warn("⚠️ Nova stderr:", stderrText);
+      
+      // Forward important stderr messages to frontend for debugging
+      if (stderrText.includes("EMPATHY") || stderrText.includes("🧠") || stderrText.includes("ERROR")) {
+        socket.emit("nova-debug", { 
+          type: "stderr", 
+          message: stderrText,
+          timestamp: Date.now()
+        });
+      }
     });
 
     novaProcess.on("error", (error) => {
       console.error("❌ Nova process error:", error.message);
+      console.error("❌ Nova process error details:", error);
+      
+      // Send error details to frontend
+      socket.emit("nova-error", { 
+        error: error.message,
+        code: error.code,
+        details: error.toString()
+      });
+      
       if (error.code === "ENOENT") {
         console.log("🐍 Trying 'python' instead of 'python3'");
         // Retry with 'python' command
@@ -358,6 +399,54 @@ io.on("connection", (socket) => {
       novaProcess.stdin.write(JSON.stringify({ type: "end_audio" }) + "\n");
       audioStarted = false;
       console.log("🛑 Sent end_audio to Nova process");
+    }
+  });
+
+  // ─── Voice transcription for manual empathy evaluation ──────────────────
+  socket.on("voice-transcription", (data) => {
+    console.log("🎤 VOICE TRANSCRIPTION: Received for empathy evaluation:", data.text?.substring(0, 50));
+    console.log("🎤 VOICE TRANSCRIPTION: Session ID:", data.session_id);
+    console.log("🎤 VOICE TRANSCRIPTION: Nova ready:", novaReady);
+    console.log("🎤 VOICE TRANSCRIPTION: Nova process exists:", !!novaProcess);
+    console.log("🎤 VOICE TRANSCRIPTION: Stdin writable:", novaProcess?.stdin?.writable);
+    
+    if (novaProcess && novaProcess.stdin.writable && novaReady) {
+      try {
+        // Send transcription to Nova Sonic for empathy evaluation
+        const message = {
+          type: "evaluate_empathy",
+          text: data.text,
+          session_id: data.session_id || "default"
+        };
+        
+        console.log("🎤 VOICE TRANSCRIPTION: Sending message to Nova:", JSON.stringify(message).substring(0, 100));
+        novaProcess.stdin.write(JSON.stringify(message) + "\n");
+        console.log("✅ VOICE TRANSCRIPTION: Successfully sent to Nova for empathy evaluation");
+        
+        // Also emit confirmation to frontend
+        socket.emit("transcription-received", { 
+          status: "processing", 
+          text: data.text?.substring(0, 50) + "..."
+        });
+        
+      } catch (error) {
+        console.error("❌ VOICE TRANSCRIPTION: Error sending to Nova:", error);
+        socket.emit("transcription-error", { error: error.message });
+      }
+    } else {
+      console.log("❌ VOICE TRANSCRIPTION: Cannot send - Nova not ready or stdin not writable");
+      console.log("   - Nova process:", !!novaProcess);
+      console.log("   - Stdin writable:", novaProcess?.stdin?.writable);
+      console.log("   - Nova ready:", novaReady);
+      
+      socket.emit("transcription-error", { 
+        error: "Voice system not ready",
+        details: {
+          novaProcess: !!novaProcess,
+          stdinWritable: novaProcess?.stdin?.writable,
+          novaReady: novaReady
+        }
+      });
     }
   });
 

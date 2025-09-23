@@ -5,10 +5,10 @@ const studentEmpathySummary = async (event, sqlConnection) => {
   const { session_id, email, simulation_group_id, patient_id } =
     event.queryStringParameters || {};
 
-  if (!session_id || !email || !simulation_group_id || !patient_id) {
+  if (!email || !simulation_group_id) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: "Missing required parameters" }),
+      body: JSON.stringify({ error: "Missing required parameters: email, simulation_group_id" }),
     };
   }
 
@@ -51,23 +51,41 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       };
     }
 
-    // Get all empathy evaluations for this session
-    const empathyData = await sqlConnection`
-      SELECT m.empathy_evaluation
-      FROM "messages" m
-      JOIN "sessions" s ON m.session_id = s.session_id
-      JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
-      JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
-      WHERE e.user_id = ${userId}
-        AND e.simulation_group_id = ${simulation_group_id}
-        AND si.patient_id = ${patient_id}
-        AND m.student_sent = true
-        AND m.empathy_evaluation IS NOT NULL
-      ORDER BY m.time_sent DESC
-      LIMIT 3;
-    `;
+    // Get ALL empathy evaluations for score calculation
+    let allEmpathyData;
+    if (patient_id) {
+      allEmpathyData = await sqlConnection`
+        SELECT m.empathy_evaluation
+        FROM "messages" m
+        JOIN "sessions" s ON m.session_id = s.session_id
+        JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+        JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+        WHERE e.user_id = ${userId}
+          AND e.simulation_group_id = ${simulation_group_id}
+          AND si.patient_id = ${patient_id}
+          AND m.student_sent = true
+          AND m.empathy_evaluation IS NOT NULL
+        ORDER BY m.time_sent DESC;
+      `;
+    } else {
+      allEmpathyData = await sqlConnection`
+        SELECT m.empathy_evaluation
+        FROM "messages" m
+        JOIN "sessions" s ON m.session_id = s.session_id
+        JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+        JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+        WHERE e.user_id = ${userId}
+          AND e.simulation_group_id = ${simulation_group_id}
+          AND m.student_sent = true
+          AND m.empathy_evaluation IS NOT NULL
+        ORDER BY m.time_sent DESC;
+      `;
+    }
+    
+    // Get recent evaluations for feedback text (top 3)
+    const recentEmpathyData = allEmpathyData.slice(0, 3);
 
-    if (!empathyData || empathyData.length === 0) {
+    if (!allEmpathyData || allEmpathyData.length === 0) {
       return {
         statusCode: 200,
         body: JSON.stringify({
@@ -104,10 +122,11 @@ const studentEmpathySummary = async (event, sqlConnection) => {
     let whyRealistic = [];
     let whyUnrealistic = [];
 
-    console.log(`Found ${empathyData.length} empathy evaluations`);
+    console.log(`Found ${allEmpathyData.length} empathy evaluations for scoring`);
+    console.log(`Using ${recentEmpathyData.length} recent evaluations for feedback`);
 
-    // Process all evaluations
-    empathyData.forEach((row, index) => {
+    // Process ALL evaluations for score calculation
+    allEmpathyData.forEach((row, index) => {
       const evaluation = row.empathy_evaluation;
       console.log(`Evaluation ${index}:`, JSON.stringify(evaluation, null, 2));
       console.log(
@@ -120,7 +139,21 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         `Suggestions:`,
         evaluation?.feedback?.improvement_suggestions
       );
-      if (evaluation && typeof evaluation === "object") {
+      
+      // 🔍 DEBUG: Check if evaluation is empty object
+      const isEmptyObject = evaluation && typeof evaluation === "object" && Object.keys(evaluation).length === 0;
+      console.log(`🔍 DEBUG: Evaluation ${index} is empty object:`, isEmptyObject);
+      
+      // Skip empty objects and evaluations without valid numeric scores
+      // Only count evaluations that have at least one actual numeric score > 0
+      const hasValidScore = evaluation && typeof evaluation === "object" && !isEmptyObject &&
+        (evaluation.empathy_score > 0 || evaluation.perspective_taking > 0 || evaluation.emotional_resonance > 0 || 
+         evaluation.acknowledgment > 0 || evaluation.language_communication > 0 || evaluation.cognitive_empathy > 0 || evaluation.affective_empathy > 0);
+      
+      console.log(`🔍 DEBUG: Evaluation ${index} hasValidScore:`, hasValidScore);
+      
+      if (hasValidScore) {
+        console.log(`🔍 DEBUG: Processing valid evaluation ${index} with empathy_score:`, evaluation.empathy_score);
         totalScore += evaluation.empathy_score || 0;
         totalPT += evaluation.perspective_taking || 0;
         totalER += evaluation.emotional_resonance || 0;
@@ -129,60 +162,66 @@ const studentEmpathySummary = async (event, sqlConnection) => {
         totalCog += evaluation.cognitive_empathy || 0;
         totalAff += evaluation.affective_empathy || 0;
         validCount++;
+        console.log(`🔍 DEBUG: Valid count now:`, validCount);
 
-        // Collect feedback data from the most recent evaluations (up to 3)
-        if (validCount <= 3 && evaluation.feedback) {
-          if (typeof evaluation.feedback === "object") {
-            // Add strengths
-            if (
-              evaluation.feedback.strengths &&
-              Array.isArray(evaluation.feedback.strengths)
-            ) {
-              strengths = [...strengths, ...evaluation.feedback.strengths];
+        // Score calculation only - no feedback collection here
+      }
+    });
+    
+    // Collect feedback data from recent evaluations only (top 3)
+    recentEmpathyData.forEach((row, index) => {
+      const evaluation = row.empathy_evaluation;
+      if (evaluation && typeof evaluation === "object" && evaluation.feedback) {
+        if (typeof evaluation.feedback === "object") {
+          // Add strengths
+          if (
+            evaluation.feedback.strengths &&
+            Array.isArray(evaluation.feedback.strengths)
+          ) {
+            strengths = [...strengths, ...evaluation.feedback.strengths];
+          }
+
+          // Add areas for improvement
+          if (
+            evaluation.feedback.areas_for_improvement &&
+            Array.isArray(evaluation.feedback.areas_for_improvement)
+          ) {
+            areasForImprovement = [
+              ...areasForImprovement,
+              ...evaluation.feedback.areas_for_improvement,
+            ];
+          }
+
+          // Add improvement suggestions
+          if (
+            evaluation.feedback.improvement_suggestions &&
+            Array.isArray(evaluation.feedback.improvement_suggestions)
+          ) {
+            recommendations = [
+              ...recommendations,
+              ...evaluation.feedback.improvement_suggestions,
+            ];
+          }
+
+          // Get the most recent recommended approach
+          if (evaluation.feedback.alternative_phrasing) {
+            recommendedApproach = evaluation.feedback.alternative_phrasing;
+          }
+
+          // Count realism flags and collect reasoning
+          if (evaluation.realism_flag === "unrealistic") {
+            unrealisticCount++;
+
+            // Collect why_unrealistic feedback
+            if (evaluation.feedback.why_unrealistic) {
+              whyUnrealistic.push(evaluation.feedback.why_unrealistic);
             }
+          } else {
+            realisticCount++;
 
-            // Add areas for improvement
-            if (
-              evaluation.feedback.areas_for_improvement &&
-              Array.isArray(evaluation.feedback.areas_for_improvement)
-            ) {
-              areasForImprovement = [
-                ...areasForImprovement,
-                ...evaluation.feedback.areas_for_improvement,
-              ];
-            }
-
-            // Add improvement suggestions
-            if (
-              evaluation.feedback.improvement_suggestions &&
-              Array.isArray(evaluation.feedback.improvement_suggestions)
-            ) {
-              recommendations = [
-                ...recommendations,
-                ...evaluation.feedback.improvement_suggestions,
-              ];
-            }
-
-            // Get the most recent recommended approach
-            if (evaluation.feedback.alternative_phrasing) {
-              recommendedApproach = evaluation.feedback.alternative_phrasing;
-            }
-
-            // Count realism flags and collect reasoning
-            if (evaluation.realism_flag === "unrealistic") {
-              unrealisticCount++;
-
-              // Collect why_unrealistic feedback
-              if (evaluation.feedback.why_unrealistic) {
-                whyUnrealistic.push(evaluation.feedback.why_unrealistic);
-              }
-            } else {
-              realisticCount++;
-
-              // Collect why_realistic feedback
-              if (evaluation.feedback.why_realistic) {
-                whyRealistic.push(evaluation.feedback.why_realistic);
-              }
+            // Collect why_realistic feedback
+            if (evaluation.feedback.why_realistic) {
+              whyRealistic.push(evaluation.feedback.why_realistic);
             }
           }
         }
@@ -251,18 +290,34 @@ const studentEmpathySummary = async (event, sqlConnection) => {
       (weaknessAreas ? `Areas for development: ${weaknessAreas}. ` : "") +
       `You show ${empathySummary} in your interactions.`;
 
-    // Get total interactions count
-    const totalInteractions = await sqlConnection`
-      SELECT COUNT(*) as count
-      FROM "messages" m
-      JOIN "sessions" s ON m.session_id = s.session_id
-      JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
-      JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
-      WHERE e.user_id = ${userId}
-      AND e.simulation_group_id = ${simulation_group_id}
-      AND si.patient_id = ${patient_id}
-      AND m.student_sent = true;
-    `;
+    // Get total interactions count (only messages with empathy evaluations)
+    let totalInteractions;
+    if (patient_id) {
+      totalInteractions = await sqlConnection`
+        SELECT COUNT(*) as count
+        FROM "messages" m
+        JOIN "sessions" s ON m.session_id = s.session_id
+        JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+        JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+        WHERE e.user_id = ${userId}
+        AND e.simulation_group_id = ${simulation_group_id}
+        AND si.patient_id = ${patient_id}
+        AND m.student_sent = true
+        AND m.empathy_evaluation IS NOT NULL;
+      `;
+    } else {
+      totalInteractions = await sqlConnection`
+        SELECT COUNT(*) as count
+        FROM "messages" m
+        JOIN "sessions" s ON m.session_id = s.session_id
+        JOIN "student_interactions" si ON s.student_interaction_id = si.student_interaction_id
+        JOIN "enrolments" e ON si.enrolment_id = e.enrolment_id
+        WHERE e.user_id = ${userId}
+        AND e.simulation_group_id = ${simulation_group_id}
+        AND m.student_sent = true
+        AND m.empathy_evaluation IS NOT NULL;
+      `;
+    }
 
     // Remove duplicates from arrays
     const uniqueStrengths = [...new Set(strengths)];

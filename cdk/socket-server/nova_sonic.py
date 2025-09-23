@@ -354,13 +354,42 @@ class NovaSonic:
             print(f"🔍 DEBUG: Audio ended, user input: {self._current_user_input[:50]}...", flush=True)
             logger.info(f"🎤 AUDIO END - User input: {self._current_user_input[:30]}...")
             
-            # Save user message to DB
+            # Save user message to DB (CRITICAL for empathy coach review)
+            print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
             asyncio.create_task(self._save_user_message_async(self._current_user_input))
             
-            # Check if empathy evaluation is enabled before running it
-            asyncio.create_task(self._check_and_evaluate_empathy(self._current_user_input))
+            # CRITICAL: Direct empathy evaluation for voice input
+            print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
+            patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
             
+            # CRITICAL FIX: Capture the user input BEFORE creating async task to prevent race condition
+            captured_user_input = self._current_user_input
+            print(f"🔍 CRITICAL FIX: Captured user input: '{captured_user_input}'", flush=True)
+            
+            # Create empathy evaluation task with proper error handling
+            async def safe_empathy_eval():
+                try:
+                    print(f"🧠 VOICE EMPATHY: Starting evaluation task", flush=True)
+                    # CRITICAL DEBUG: Log exactly what we're passing
+                    print(f"🔍 CRITICAL: About to pass to _evaluate_empathy: '{captured_user_input}'", flush=True)
+                    print(f"🔍 CRITICAL: Patient context: '{patient_context}'", flush=True)
+                    result = await self._evaluate_empathy(captured_user_input, patient_context)
+                    if result:
+                        print(f"🧠 VOICE EMPATHY: Evaluation completed successfully", flush=True)
+                    else:
+                        print(f"🧠 VOICE EMPATHY: Evaluation returned None", flush=True)
+                except Exception as e:
+                    print(f"🧠 VOICE EMPATHY: Evaluation failed with error: {e}", flush=True)
+                    logger.error(f"Voice empathy evaluation error: {e}")
+            
+            asyncio.create_task(safe_empathy_eval())
+            
+            # CRITICAL DEBUG: Log before resetting
+            print(f"🔍 CRITICAL: About to reset _current_user_input. Current value: '{self._current_user_input}'", flush=True)
             self._current_user_input = ""  # Reset for next input
+            print(f"🔍 CRITICAL: After reset _current_user_input: '{self._current_user_input}'", flush=True)
+        else:
+            print(f"🔍 DEBUG: No user input to save at audio end - Input: '{getattr(self, '_current_user_input', 'NOT_SET')}'", flush=True)
 
     
     async def end_session(self):
@@ -375,6 +404,35 @@ class NovaSonic:
         "event": { "sessionEnd": {} }
         })
         await self.stream.input_stream.close()
+    
+    async def handle_manual_empathy_evaluation(self, text, session_id=None):
+        """Handle manual empathy evaluation requests from server.js"""
+        try:
+            print(f"🧠 MANUAL EMPATHY: Received request for text: {text[:50]}...", flush=True)
+            logger.info(f"🧠 Manual empathy evaluation requested for: {text[:30]}...")
+            
+            # Use provided session_id or fall back to instance session_id
+            eval_session_id = session_id or self.session_id
+            
+            # Save the user message first
+            print(f"💾 MANUAL EMPATHY: Saving user message to DB", flush=True)
+            await self._save_user_message_async(text)
+            
+            # Run empathy evaluation
+            print(f"🧠 MANUAL EMPATHY: Starting empathy evaluation", flush=True)
+            patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
+            empathy_result = await self._evaluate_empathy(text, patient_context)
+            
+            if empathy_result:
+                print(f"🧠 MANUAL EMPATHY: Evaluation successful", flush=True)
+                logger.info(f"🧠 Manual empathy evaluation completed successfully")
+            else:
+                print(f"🧠 MANUAL EMPATHY: Evaluation failed", flush=True)
+                logger.warning(f"🧠 Manual empathy evaluation failed")
+                
+        except Exception as e:
+            print(f"🧠 MANUAL EMPATHY ERROR: {e}", flush=True)
+            logger.error(f"🧠 Manual empathy evaluation error: {e}")
 
 
     async def _process_responses(self):
@@ -461,16 +519,33 @@ class NovaSonic:
                 print(f"User: {text}", flush=True)
                 print(json.dumps({"type": "text", "text": text}), flush=True)
                 
-                # Accumulate user input for empathy evaluation
+                # CRITICAL FIX: Accumulate user input for empathy evaluation
                 if not hasattr(self, '_current_user_input'):
                     self._current_user_input = ""
-                self._current_user_input += text
+                    print(f"🔍 DEBUG: Initialized _current_user_input", flush=True)
                 
-                # Check empathy evaluation if enabled
+                # CRITICAL: Ensure we're accumulating the actual text
+                if text and text.strip():
+                    self._current_user_input += text
+                    print(f"🔍 CRITICAL: Added '{text}' to _current_user_input", flush=True)
+                    print(f"🔍 CRITICAL: _current_user_input now: '{self._current_user_input}'", flush=True)
+                    print(f"🔍 DEBUG: Accumulated user input now: {len(self._current_user_input)} chars", flush=True)
+                else:
+                    print(f"🔍 WARNING: Empty or whitespace-only text, not adding to _current_user_input", flush=True)
+                
+                # CRITICAL FIX: Save USER message to database immediately
                 if text.strip():
+                    print(f"💾 SAVING USER MESSAGE TO DB: {text[:50]}...", flush=True)
+                    asyncio.create_task(self._save_user_message_async(text))
+                    
                     print(f"🔍 DEBUG: Starting empathy check for USER text", flush=True)
                     logger.info(f"🧠 USER MESSAGE - Checking empathy: {text[:30]}...")
-                    asyncio.create_task(self._check_and_evaluate_empathy(text))
+                    
+                    # Use the direct empathy evaluation method for voice inputs
+                    patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
+                    # CRITICAL DEBUG: Log what we're passing to empathy evaluation
+                    print(f"🔍 DEBUG: About to evaluate empathy for text: '{text}'", flush=True)
+                    asyncio.create_task(self._evaluate_empathy(text, patient_context))
                 else:
                     print(f"🔍 DEBUG: Empty USER text, skipping empathy", flush=True)
                     logger.info(f"🧠 Empty user text, skipping empathy evaluation")
@@ -544,9 +619,16 @@ class NovaSonic:
             try:
                 normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
                 langchain_chat_history.add_message(self.session_id, normalized_role, text)
-                # Save AI messages to messages table too
+                
+                # Save ALL messages to messages table (both USER and ASSISTANT)
                 if self.role and self.role.upper() == "ASSISTANT":
+                    print(f"💾 SAVING ASSISTANT MESSAGE TO DB: {text[:50]}...", flush=True)
                     self._save_message_to_db(self.session_id, False, text, None)
+                elif self.role and self.role.upper() == "USER":
+                    print(f"💾 SAVING USER MESSAGE TO DB (BACKUP): {text[:50]}...", flush=True)
+                    # Backup save in case async save fails
+                    self._save_message_to_db(self.session_id, True, text, None)
+                    
                 logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")
             except Exception as e:
                 print(f"❌ Failed to insert message into PostgreSQL: {e}", flush=True)
@@ -573,7 +655,7 @@ class NovaSonic:
     def _get_empathy_prompt(self):
         """Retrieve the latest empathy prompt from the empathy_prompt_history table."""
         try:
-            # Get database credentials from AWS Secrets Manager
+            logger.info("🔍 VOICE: RETRIEVING EMPATHY PROMPT FROM DATABASE")
             secrets_client = boto3.client('secretsmanager')
             db_secret_name = os.environ.get('SM_DB_CREDENTIALS')
             rds_endpoint = os.environ.get('RDS_PROXY_ENDPOINT')
@@ -585,7 +667,6 @@ class NovaSonic:
             secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
             secret = json.loads(secret_response['SecretString'])
 
-            # Connect to database
             conn = psycopg2.connect(
                 host=rds_endpoint,
                 port=secret['port'],
@@ -595,9 +676,8 @@ class NovaSonic:
             )
             cursor = conn.cursor()
 
-            # Get the latest empathy prompt
             cursor.execute(
-                'SELECT prompt_content FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
+                'SELECT prompt_content, created_at FROM empathy_prompt_history ORDER BY created_at DESC LIMIT 1'
             )
             
             result = cursor.fetchone()
@@ -605,12 +685,44 @@ class NovaSonic:
             conn.close()
 
             if result and result[0]:
-                return result[0]
+                prompt_content = result[0]
+                created_at = result[1]
+                logger.info(f"🎯 VOICE: ADMIN EMPATHY PROMPT FOUND - Created: {created_at}")
+                logger.info(f"🎯 VOICE: ADMIN PROMPT LENGTH: {len(prompt_content)} characters")
+                
+                # Check if prompt has required placeholders
+                if '{patient_context}' not in prompt_content or '{user_text}' not in prompt_content:
+                    logger.error("❌ VOICE: ADMIN PROMPT MISSING REQUIRED PLACEHOLDERS")
+                    return self._get_default_empathy_prompt()
+                
+                # Fix JSON formatting issues - replace single braces with double braces in JSON template
+                if '"empathy_score":' in prompt_content and '{{' not in prompt_content:
+                    logger.info("🔧 VOICE: FIXING ADMIN PROMPT JSON FORMATTING")
+                    import re
+                    # More robust pattern to handle multiline JSON with whitespace
+                    json_pattern = r'(\{[^{}]*?"empathy_score"[^{}]*?\})'
+                    matches = re.findall(json_pattern, prompt_content, re.DOTALL)
+                    
+                    if matches:
+                        for match in matches:
+                            # Replace single braces with double braces for literal JSON
+                            fixed_match = match.replace('{', '{{').replace('}', '}}')
+                            prompt_content = prompt_content.replace(match, fixed_match)
+                        logger.info("✅ VOICE: ADMIN PROMPT JSON FORMATTING FIXED")
+                    else:
+                        # Fallback: simple replacement for any JSON-like structure
+                        logger.info("🔧 VOICE: APPLYING FALLBACK JSON FORMATTING")
+                        prompt_content = re.sub(r'\{(\s*"empathy_score"[^}]*?)\}', r'{{\1}}', prompt_content, flags=re.DOTALL)
+                        logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED")
+                
+                return prompt_content
             else:
+                logger.info("🔧 VOICE: No admin prompt found, using default empathy prompt")
                 return self._get_default_empathy_prompt()
 
         except Exception as e:
-            logger.error(f"Error retrieving empathy prompt from DB: {e}")
+            logger.error(f"VOICE: Error retrieving empathy prompt from DB: {e}")
+            logger.info("🔧 VOICE: Falling back to default empathy prompt")
             return self._get_default_empathy_prompt()
     
     def _get_default_empathy_prompt(self):
@@ -706,158 +818,121 @@ Provide structured evaluation with detailed justifications for each score.
 }}
 """
     
-    async def _evaluate_empathy_async(self, user_text):
-        """Async empathy evaluation to reduce blocking"""
-        try:
-            patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            bedrock_client = self._get_bedrock_client()
-            
-            # Get empathy prompt from database
-            empathy_prompt_template = self._get_empathy_prompt()
-            
-            # Format the prompt with actual values
-            evaluation_prompt = empathy_prompt_template.format(
-                patient_context=patient_context,
-                user_text=user_text
-            )
-            
-            body = {"messages": [{"role": "user", "content": [{"text": evaluation_prompt}]}], "inferenceConfig": {"temperature": 0.1, "maxTokens": 600}}
-            
-            # Run in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, lambda: bedrock_client.invoke_model(
-                modelId="amazon.nova-lite-v1:0",  # Use faster model
-                contentType="application/json", 
-                accept="application/json", 
-                body=json.dumps(body)
-            ))
-            
-            result = json.loads(response["body"].read())
-            response_text = result["output"]["message"]["content"][0]["text"]
-            
-            json_start = response_text.find('{')
-            json_end = response_text.rfind('}') + 1
-            
-            if json_start != -1 and json_end > json_start:
-                json_text = response_text[json_start:json_end]
-                empathy_result = json.loads(json_text)
-                # Async DB save
-                await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, empathy_result)
-                empathy_feedback = self._build_empathy_feedback(empathy_result)
-                if empathy_feedback:
-                    print(json.dumps({"type": "empathy", "content": empathy_feedback}), flush=True)
-                    # Also send raw empathy data for frontend processing
-                    print(json.dumps({"type": "empathy_data", "content": json.dumps(empathy_result)}), flush=True)
-                    
-        except Exception as e:
-            print(f"Empathy evaluation failed: {e}", flush=True)
-            try:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
-            except:
-                pass
+
     
-    async def _is_empathy_enabled(self):
-        """Check if empathy evaluation is enabled for this simulation group via API"""
-        try:
-            # Get simulation_group_id from session
-            conn = get_pg_connection()
-            cursor = conn.cursor()
-            cursor.execute('SELECT simulation_group_id FROM sessions WHERE session_id = %s', (self.session_id,))
-            result = cursor.fetchone()
-            cursor.close()
-            pg_conn_pool.putconn(conn)
-            
-            if not result:
-                logger.warning(f"🧠 No session found for {self.session_id}, defaulting to disabled")
-                return False
-                
-            simulation_group_id = result[0]
-            
-            # Call API endpoint
-            api_endpoint = os.environ.get('API_ENDPOINT')
-            if not api_endpoint:
-                logger.warning("API_ENDPOINT not set, defaulting to disabled")
-                return False
-            url = f"{api_endpoint}student/empathy_enabled?simulation_group_id={simulation_group_id}"
-            
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, lambda: requests.get(url, timeout=5))
-            if response.status_code == 200:
-                data = response.json()
-                empathy_enabled = data.get('empathy_enabled', False)
-                logger.info(f"🧠 Empathy enabled status for group {simulation_group_id}: {empathy_enabled}")
-                return empathy_enabled
-            else:
-                logger.warning(f"🧠 API call failed with status {response.status_code}, defaulting to disabled")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error checking empathy enabled status: {e}")
-            return False
-    
-    async def _check_and_evaluate_empathy(self, user_text):
-        """Check if empathy is enabled and evaluate if so"""
-        try:
-            if await self._is_empathy_enabled():
-                logger.info(f"🧠 Empathy enabled, evaluating empathy for voice input")
-                await self._evaluate_empathy_async(user_text)
-            else:
-                logger.info(f"🧠 Empathy disabled, skipping evaluation for voice input")
-        except Exception as e:
-            logger.error(f"Error in empathy check and evaluation: {e}")
+
     
     async def _save_user_message_async(self, user_text):
         """Save user message to database asynchronously"""
         try:
             loop = asyncio.get_event_loop()
+            print(f"💾 ASYNC SAVE: Starting save for user text: {user_text[:50]}...", flush=True)
             await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
             # Also add to chat history
             await loop.run_in_executor(None, langchain_chat_history.add_message, self.session_id, "user", user_text)
+            print(f"✅ ASYNC SAVE COMPLETE: User message saved to DB", flush=True)
             logger.info(f"💾 User audio message saved: {user_text[:30]}...")
         except Exception as e:
+            print(f"❌ ASYNC SAVE FAILED: {e}", flush=True)
             logger.error(f"Failed to save user audio message: {e}")
     
     async def _evaluate_empathy(self, student_response, patient_context):
-        """LLM-as-a-Judge empathy evaluation using Nova Pro"""
-        print(f"🧠 _evaluate_empathy CALLED", flush=True)
+        """LLM-as-a-Judge empathy evaluation using admin-controlled prompt system"""
+        print(f"🧠 VOICE: _evaluate_empathy CALLED with response: {student_response[:50]}...", flush=True)
+        logger.info(f"🧠 VOICE: Starting empathy evaluation for: {student_response[:30]}...")
+        
+        # CRITICAL DEBUG: Log the raw inputs first
+        logger.info(f"🔍 VOICE: RAW STUDENT RESPONSE: '{student_response}'")
+        logger.info(f"🔍 VOICE: RAW PATIENT CONTEXT: '{patient_context}'")
+        
+        # Basic validation and sanitization
+        if not student_response:
+            logger.error(f"❌ VOICE: STUDENT RESPONSE IS NONE")
+            return None
+            
+        # Clean the student response
+        student_response = str(student_response).strip()
+        
+        if not student_response:
+            logger.error(f"❌ VOICE: STUDENT RESPONSE IS EMPTY AFTER STRIP")
+            return None
+            
+        if len(student_response) > 1000:  # Reasonable limit
+            student_response = student_response[:1000]
+            logger.warning(f"⚠️ VOICE: Truncated long student response to 1000 characters")
+            
+        # Ensure patient context is valid
+        if not patient_context:
+            patient_context = "General patient interaction"
+            logger.warning(f"⚠️ VOICE: Using default patient context")
+            
+        # CRITICAL DEBUG: Log the cleaned inputs
+        logger.info(f"🔍 VOICE: CLEANED STUDENT RESPONSE: '{student_response}'")
+        logger.info(f"🔍 VOICE: CLEANED PATIENT CONTEXT: '{patient_context}'")
+        logger.info(f"🔍 VOICE: RESPONSE LENGTH: {len(student_response)} characters")
+        
         try:
-            print(f"🧠 Creating bedrock client for region: {self.deployment_region or 'us-east-1'}", flush=True)
+            print(f"🧠 VOICE: Creating bedrock client for region: {self.deployment_region or 'us-east-1'}", flush=True)
             bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
             
-            evaluation_prompt = f"""
-You are an LLM-as-a-Judge for healthcare empathy evaluation. Assess this pharmacy student's empathetic communication.
-
-**CONTEXT:**
-Patient Context: {patient_context}
-Student Response: {student_response}
-
-**SCORING (1-5 scale):**
-- Perspective-Taking: Understanding patient's viewpoint
-- Emotional Resonance: Warmth and sensitivity
-- Acknowledgment: Validating patient's experience
-- Language & Communication: Clear, respectful language
-- Cognitive Empathy: Understanding thoughts/perspective
-- Affective Empathy: Emotional attunement
-
-**REALISM:** realistic|unrealistic
-
-Provide JSON response:
-{{
-    "perspective_taking": <1-5>,
-    "emotional_resonance": <1-5>,
-    "acknowledgment": <1-5>,
-    "language_communication": <1-5>,
-    "cognitive_empathy": <1-5>,
-    "affective_empathy": <1-5>,
-    "realism_flag": "realistic|unrealistic",
-    "feedback": {{
-        "strengths": ["specific strengths"],
-        "areas_for_improvement": ["specific areas"],
-        "improvement_suggestions": ["actionable suggestions"]
-    }}
-}}
-"""
+            # Get admin-controlled empathy prompt (same as chat.py)
+            empathy_prompt_template = self._get_empathy_prompt()
+            logger.info(f"🎯 VOICE: EMPATHY PROMPT LENGTH: {len(empathy_prompt_template)} characters")
+            
+            # CRITICAL DEBUG: Log the exact inputs being used for evaluation
+            logger.info(f"🔍 VOICE: FINAL PATIENT CONTEXT: {patient_context}")
+            logger.info(f"🔍 VOICE: FINAL USER TEXT TO EVALUATE: '{student_response}'")
+            logger.info(f"🔍 VOICE: FINAL USER TEXT LENGTH: {len(student_response)} characters")
+            
+            # CRITICAL: Final validation before processing
+            if len(student_response.strip()) == 0:
+                logger.error(f"❌ VOICE: STUDENT RESPONSE IS EMPTY AFTER FINAL STRIP")
+                return None
+                
+            logger.info(f"✅ VOICE: PROCEEDING WITH EVALUATION - Response: '{student_response[:100]}...'")
+            
+            try:
+                evaluation_prompt = empathy_prompt_template.format(
+                    patient_context=patient_context,
+                    user_text=student_response
+                )
+                logger.info(f"✅ VOICE: PROMPT FORMATTING SUCCESSFUL - Final prompt length: {len(evaluation_prompt)}")
+                
+                # CRITICAL VALIDATION: Ensure the user text was actually substituted
+                if student_response not in evaluation_prompt:
+                    logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN FORMATTED PROMPT - This will cause hallucination!")
+                    logger.error(f"❌ VOICE: Expected to find: '{student_response}'")
+                    return None
+                    
+                # CRITICAL DEBUG: Log a sample of the formatted prompt to verify user text is included
+                prompt_sample = evaluation_prompt[-500:] if len(evaluation_prompt) > 500 else evaluation_prompt
+                logger.info(f"🔍 VOICE: PROMPT SAMPLE (last 500 chars): {prompt_sample}")
+                logger.info(f"✅ VOICE: CONFIRMED USER TEXT IS IN PROMPT")
+            except Exception as format_error:
+                logger.error(f"❌ VOICE: ADMIN PROMPT FORMATTING ERROR: {format_error}")
+                logger.error(f"❌ VOICE: FALLING BACK TO DEFAULT EMPATHY PROMPT")
+                try:
+                    default_prompt = self._get_default_empathy_prompt()
+                    evaluation_prompt = default_prompt.format(
+                        patient_context=patient_context,
+                        user_text=student_response
+                    )
+                    logger.info(f"✅ VOICE: DEFAULT PROMPT FORMATTING SUCCESSFUL")
+                    
+                    # CRITICAL VALIDATION: Ensure user text is in default prompt too
+                    if student_response not in evaluation_prompt:
+                        logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN DEFAULT PROMPT EITHER")
+                        return None
+                        
+                    # CRITICAL DEBUG: Also log default prompt sample
+                    prompt_sample = evaluation_prompt[-500:] if len(evaluation_prompt) > 500 else evaluation_prompt
+                    logger.info(f"🔍 VOICE: DEFAULT PROMPT SAMPLE: {prompt_sample}")
+                    logger.info(f"✅ VOICE: CONFIRMED USER TEXT IS IN DEFAULT PROMPT")
+                except Exception as default_error:
+                    logger.error(f"❌ VOICE: DEFAULT PROMPT ALSO FAILED: {default_error}")
+                    return None
+            
+            print(f"🧠 VOICE: Sending evaluation prompt to Nova Pro", flush=True)
             
             body = {
                 "messages": [{
@@ -866,254 +941,299 @@ Provide JSON response:
                 }],
                 "inferenceConfig": {
                     "temperature": 0.1,
-                    "maxTokens": 800
+                    "maxTokens": 1200
                 }
             }
             
-            response = bedrock_client.invoke_model(
-                modelId="amazon.nova-pro-v1:0",
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(body)
-            )
+            try:
+                response = bedrock_client.invoke_model(
+                    modelId="amazon.nova-pro-v1:0",
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(body)
+                )
+                logger.info("✅ VOICE: BEDROCK MODEL CALL SUCCESSFUL")
+            except Exception as model_error:
+                logger.warning(f"VOICE: Nova Pro failed in deployment region, trying us-east-1: {model_error}")
+                fallback_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+                response = fallback_client.invoke_model(
+                    modelId="amazon.nova-pro-v1:0",
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(body)
+                )
+                logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
             
             result = json.loads(response["body"].read())
             response_text = result["output"]["message"]["content"][0]["text"]
+            logger.info(f"📝 VOICE: BEDROCK RESPONSE LENGTH: {len(response_text)} characters")
             
-            # Extract JSON from response
             json_start = response_text.find('{')
             json_end = response_text.rfind('}') + 1
             
             if json_start != -1 and json_end > json_start:
                 json_text = response_text[json_start:json_end]
-                return json.loads(json_text)
-            
-            logger.error(f"Could not parse JSON from empathy response: {response_text[:200]}...")
+                logger.info(f"📝 VOICE: EXTRACTED JSON LENGTH: {len(json_text)} characters")
+                
+                empathy_result = json.loads(json_text)
+                logger.info(f"✅ VOICE: JSON PARSING SUCCESSFUL - Keys: {list(empathy_result.keys())}")
+                
+                # Convert string scores to integers and validate (same as chat.py)
+                required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']
+                for score_key in required_scores:
+                    score_value = empathy_result.get(score_key)
+                    if isinstance(score_value, str):
+                        try:
+                            empathy_result[score_key] = int(score_value)
+                        except (ValueError, TypeError):
+                            empathy_result[score_key] = 3
+                    elif score_value is None or score_value == 0:
+                        empathy_result[score_key] = 3
+                
+                if 'empathy_score' in empathy_result:
+                    empathy_score = empathy_result.get('empathy_score')
+                    if isinstance(empathy_score, str):
+                        try:
+                            empathy_result['empathy_score'] = int(empathy_score)
+                        except (ValueError, TypeError):
+                            empathy_result['empathy_score'] = 3
+                
+                empathy_result["evaluation_method"] = "LLM-as-a-Judge"
+                empathy_result["judge_model"] = "amazon.nova-pro-v1:0"
+                
+                # Save to database
+                self._save_message_to_db(self.session_id, True, student_response, empathy_result)
+                
+                # Send empathy feedback
+                empathy_feedback = self._build_empathy_feedback(empathy_result)
+                if empathy_feedback:
+                    print(json.dumps({"type": "empathy", "content": empathy_feedback}), flush=True)
+                    print(json.dumps({"type": "empathy_data", "content": json.dumps(empathy_result)}), flush=True)
+                    logger.info(f"🧠 VOICE: Empathy feedback sent to frontend")
+                
+                logger.info(f"✅ VOICE: EMPATHY EVALUATION COMPLETED SUCCESSFULLY")
+                return empathy_result
+            else:
+                logger.error(f"❌ VOICE: NO JSON FOUND IN RESPONSE: {response_text}")
+                raise json.JSONDecodeError("No JSON found", response_text, 0)
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ VOICE: JSON DECODE ERROR: {e}")
             return None
+        except Exception as e:
+            logger.error(f"❌ VOICE: EMPATHY EVALUATION ERROR: {e}")
+            # Fallback: Save message without empathy data
+            try:
+                self._save_message_to_db(self.session_id, True, student_response, None)
+                logger.info(f"🧠 VOICE: Message saved without empathy data as fallback")
+            except Exception as save_error:
+                logger.error(f"🧠 VOICE: Failed to save message as fallback: {save_error}")
+            return None
+    
+    def _build_empathy_feedback(self, empathy_result):
+        """Build formatted empathy feedback for display"""
+        try:
+            if not empathy_result:
+                return None
+                
+            feedback = f"**🎤 Voice Empathy Coach:**\n\n"
+            feedback += f"**Overall Empathy Score:** {empathy_result.get('empathy_score', 'N/A')}/5\n\n"
+            
+            # Add detailed scores
+            scores = [
+                ("Perspective-Taking", empathy_result.get('perspective_taking', 'N/A')),
+                ("Emotional Resonance", empathy_result.get('emotional_resonance', 'N/A')),
+                ("Acknowledgment", empathy_result.get('acknowledgment', 'N/A')),
+                ("Language & Communication", empathy_result.get('language_communication', 'N/A')),
+                ("Cognitive Empathy", empathy_result.get('cognitive_empathy', 'N/A')),
+                ("Affective Empathy", empathy_result.get('affective_empathy', 'N/A'))
+            ]
+            
+            for score_name, score_value in scores:
+                feedback += f"**{score_name}:** {score_value}/5\n"
+            
+            # Add assessment
+            if empathy_result.get('judge_reasoning', {}).get('overall_assessment'):
+                feedback += f"\n**Assessment:** {empathy_result['judge_reasoning']['overall_assessment']}\n"
+            
+            # Add strengths
+            strengths = empathy_result.get('feedback', {}).get('strengths', [])
+            if strengths:
+                feedback += f"\n**Strengths:**\n"
+                for strength in strengths[:3]:  # Limit to 3 strengths
+                    feedback += f"• {strength}\n"
+            
+            # Add improvement areas
+            improvements = empathy_result.get('feedback', {}).get('areas_for_improvement', [])
+            if improvements:
+                feedback += f"\n**Areas for Improvement:**\n"
+                for improvement in improvements[:3]:  # Limit to 3 improvements
+                    feedback += f"• {improvement}\n"
+            
+            # Add suggestions
+            suggestions = empathy_result.get('feedback', {}).get('improvement_suggestions', [])
+            if suggestions:
+                feedback += f"\n**Suggestions:**\n"
+                for suggestion in suggestions[:2]:  # Limit to 2 suggestions
+                    feedback += f"• {suggestion}\n"
+            
+            return feedback
             
         except Exception as e:
-            logger.error(f"Empathy evaluation error: {e}")
-            # Fallback to us-east-1 for Nova models if deployment region fails
-            if self.deployment_region != 'us-east-1':
-                try:
-                    logger.info(f"Retrying empathy evaluation with us-east-1 fallback")
-                    bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-                    response = bedrock_client.invoke_model(
-                        modelId="amazon.nova-pro-v1:0",
-                        contentType="application/json",
-                        accept="application/json",
-                        body=json.dumps(body)
-                    )
-                    result = json.loads(response["body"].read())
-                    response_text = result["output"]["message"]["content"][0]["text"]
-                    json_start = response_text.find('{')
-                    json_end = response_text.rfind('}') + 1
-                    if json_start != -1 and json_end > json_start:
-                        json_text = response_text[json_start:json_end]
-                        return json.loads(json_text)
-                except Exception as fallback_error:
-                    logger.error(f"Fallback empathy evaluation also failed: {fallback_error}")
+            logger.error(f"Error building empathy feedback: {e}")
             return None
     
-    def _build_empathy_feedback(self, evaluation):
-        """Build markdown feedback from evaluation like text_generation does"""
-        if not evaluation:
-            return None
-        
-        def get_level_name(score):
-            levels = {1: "Novice", 2: "Advanced Beginner", 3: "Competent", 4: "Proficient", 5: "Extending"}
-            return levels.get(int(score), "Competent")
-        
-        def stars(n):
-            return "⭐" * max(1, min(5, int(n))) + f" ({n}/5)"
-        
-        # Calculate overall score
-        pt_score = evaluation.get('perspective_taking', 3)
-        er_score = evaluation.get('emotional_resonance', 3)
-        ack_score = evaluation.get('acknowledgment', 3)
-        lang_score = evaluation.get('language_communication', 3)
-        cognitive_score = evaluation.get('cognitive_empathy', 3)
-        affective_score = evaluation.get('affective_empathy', 3)
-        
-        overall = round((pt_score + er_score + ack_score + lang_score + cognitive_score + affective_score) / 6)
-        
-        lines = []
-        lines.append("**Empathy Coach:**\\n\\n")
-        lines.append(f"**Overall Empathy Score:** {get_level_name(overall)} {stars(overall)}\\n\\n")
-        lines.append("**Category Breakdown:**\\n")
-        lines.append(f"• Perspective-Taking: {get_level_name(pt_score)} {stars(pt_score)}\\n")
-        lines.append(f"• Emotional Resonance/Compassionate Care: {get_level_name(er_score)} {stars(er_score)}\\n")
-        lines.append(f"• Acknowledgment of Patient's Experience: {get_level_name(ack_score)} {stars(ack_score)}\\n")
-        lines.append(f"• Language & Communication: {get_level_name(lang_score)} {stars(lang_score)}\\n\\n")
-        
-        lines.append(f"**Empathy Type Analysis:**\\n")
-        lines.append(f"• Cognitive Empathy (Understanding): {get_level_name(cognitive_score)} {stars(cognitive_score)}\\n")
-        lines.append(f"• Affective Empathy (Feeling): {get_level_name(affective_score)} {stars(affective_score)}\\n\\n")
-        
-        realism = evaluation.get('realism_flag', 'realistic')
-        realism_icon = "✅" if realism == "realistic" else ""
-        lines.append(f"**Realism Assessment:** Your response is {realism} {realism_icon}\\n\\n")
-        
-        # Add judge reasoning if available
-        judge_reasoning = evaluation.get('judge_reasoning', {})
-        if judge_reasoning and 'overall_assessment' in judge_reasoning:
-            assessment = judge_reasoning['overall_assessment']
-            assessment = assessment.replace("The student's response", "Your response")
-            assessment = assessment.replace("The student", "You")
-            assessment = assessment.replace("demonstrates", "show")
-            assessment = assessment.replace("fails to", "could better")
-            assessment = assessment.replace("lacks", "would benefit from more")
-            lines.append(f"**Coach Assessment:**\\n")
-            lines.append(f"{assessment}\\n\\n")
-        
-        feedback = evaluation.get('feedback', {})
-        if isinstance(feedback, dict):
-            strengths = feedback.get('strengths', [])
-            if strengths:
-                lines.append("**Strengths:**\\n")
-                for s in strengths:
-                    lines.append(f"• {s}\\n")
-                lines.append("\\n")
-            
-            areas = feedback.get('areas_for_improvement', [])
-            if areas:
-                lines.append("**Areas for improvement:**\\n")
-                for a in areas:
-                    lines.append(f"• {a}\\n")
-                lines.append("\\n")
-            
-            # Add why realistic/unrealistic
-            if 'why_realistic' in feedback and feedback['why_realistic']:
-                lines.append(f"**Your response is {realism} because:** {feedback['why_realistic']}\\n\\n")
-            elif 'why_unrealistic' in feedback and feedback['why_unrealistic']:
-                lines.append(f"**Your response is {realism} because:** {feedback['why_unrealistic']}\\n\\n")
-            
-            suggestions = feedback.get('improvement_suggestions', [])
-            if suggestions:
-                lines.append("**Coach Recommendations:**\\n")
-                for s in suggestions:
-                    lines.append(f"• {s}\\n")
-                lines.append("\\n")
-            
-            # Add alternative phrasing
-            if 'alternative_phrasing' in feedback and feedback['alternative_phrasing']:
-                lines.append(f"**Coach-Recommended Approach:** *{feedback['alternative_phrasing']}*\\n\\n")
-        
-        lines.append("---\\n\\n")
-        return "".join(lines)
-    
-    def _save_message_to_db(self, session_id, student_sent, message_content, empathy_evaluation=None):
-        """Optimized DB save with connection pooling"""
+    def _save_message_to_db(self, session_id, is_student, content, empathy_data):
+        """Save message to database with enhanced error handling and logging"""
         try:
+            print(f"💾 DB SAVE: Starting save - Student: {is_student}, Content: {content[:50]}...", flush=True)
+            logger.info(f"💾 Starting DB save for {'student' if is_student else 'assistant'} message")
+            
             conn = get_pg_connection()
             cursor = conn.cursor()
             
-            empathy_json = json.dumps(empathy_evaluation) if empathy_evaluation else None
+            # Insert into messages table
+            insert_query = """
+                INSERT INTO messages (session_id, student_sent, message_content, empathy_evaluation, time_sent) 
+                VALUES (%s, %s, %s, %s, %s)
+            """
             
-            cursor.execute(
-                'INSERT INTO "messages" (session_id, student_sent, message_content, empathy_evaluation, time_sent) VALUES (%s, %s, %s, %s, NOW())',
-                (session_id, student_sent, message_content, empathy_json)
-            )
+            empathy_json = json.dumps(empathy_data) if empathy_data else None
+            
+            cursor.execute(insert_query, (
+                session_id,
+                is_student,
+                content,
+                empathy_json,
+                datetime.now()
+            ))
             
             conn.commit()
             cursor.close()
-            pg_conn_pool.putconn(conn)  # Return to pool
+            pg_conn_pool.putconn(conn)
             
+            print(f"✅ DB SAVE COMPLETE: Message saved to database", flush=True)
             logger.info(f"💾 Message saved to DB")
-                
-        except Exception as e:
-            logger.error(f"Error saving message: {e}")
+            
+            # Also save to PostgreSQL chat history
             try:
-                pg_conn_pool.putconn(conn, close=True)  # Close bad connection
-            except:
-                pass
-
-
-
-async def handle_stdin(nova_client):
-    reader = asyncio.StreamReader()
-    loop = asyncio.get_event_loop()
-    protocol = asyncio.StreamReaderProtocol(reader)
-    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-
-    while True:
-        line = await reader.readline()
-        if not line:
-            break
-
-        try:
-            msg = json.loads(line.decode("utf-8"))
-            if msg["type"] == "audio":
-                print("🎤 Received audio input from stdin", flush=True)
-                audio_bytes = base64.b64decode(msg["data"])
-                await nova_client.send_audio_chunk(audio_bytes)
-            elif msg["type"] == "start_audio":
-                print("🎬 Received start_audio signal", flush=True)
-                await nova_client.start_audio_input()
-                print("🎤 Started audio input", flush=True)
-            elif msg["type"] == "end_audio":
-                print("🎬 Received end_audio signal", flush=True)
-                await nova_client.end_audio_input()
-            elif msg["type"] == "interrupt":
-                print("🛑 Received interrupt signal", flush=True)
-                nova_client.is_active = False
-                if nova_client.stream:
-                    try:
-                        await nova_client.stream.input_stream.close()
-                    except:
-                        pass
-            elif msg["type"] == "set_voice":
-                voice_id = msg.get("voice_id")
-                print(f"🎭 Received voice change request: {voice_id}", flush=True)
-                nova_client.voice_id = voice_id
-                print(f"🎭 Voice set to: {nova_client.voice_id}", flush=True)
-                # Force a restart of the session with the new voice
-                if nova_client.is_active:
-                    print("Restarting session with new voice", flush=True)
-                    await nova_client.end_session()
-                    await nova_client.start_session()
-
+                role = "user" if is_student else "assistant"
+                langchain_chat_history.add_message(session_id, role, content)
+                logger.info(f"💾 Saved message to PostgreSQL (session_id={session_id}, role={role})")
+            except Exception as pg_error:
+                logger.error(f"💾 Failed to save to PostgreSQL chat history: {pg_error}")
+            
         except Exception as e:
-            print(f"❌ Failed to process stdin input: {e}", flush=True)
+            print(f"❌ DB SAVE FAILED: {e}", flush=True)
+            logger.error(f"💾 Database save failed: {e}")
+            raise e
 
-async def main():
-    voice = os.getenv("VOICE_ID")
-    session_id = os.getenv("SESSION_ID", "default")
-    deployment_region = os.getenv("AWS_REGION")
-    nova_client = NovaSonic(voice_id=voice, session_id=session_id, region=deployment_region)
-    
-    # First listen for any initial configuration from stdin
-    # This allows the frontend to set the voice before starting the session
-    reader = asyncio.StreamReader()
-    loop = asyncio.get_event_loop()
-    protocol = asyncio.StreamReaderProtocol(reader)
-    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-    
-    # Wait for initial configuration for a short time
-    try:
-        # Set a timeout for initial configuration
-        line = await asyncio.wait_for(reader.readline(), 2.0)
-        if line:
-            try:
-                msg = json.loads(line.decode("utf-8"))
-                if msg["type"] == "set_voice":
-                    print(f"🎭 Setting initial voice: {msg.get('voice_id')}", flush=True)
-                    nova_client.voice_id = msg.get("voice_id")
-            except Exception as e:
-                print(f"❌ Failed to process initial config: {e}", flush=True)
-    except asyncio.TimeoutError:
-        print("No initial configuration received, using default voice", flush=True)
-    
-    # Start the session with the configured voice
-    await nova_client.start_session()
-    print("Nova session started. Listening for stdin input...")
-    
-    stdin_task = asyncio.create_task(handle_stdin(nova_client))
-    await stdin_task
 
-    await nova_client.end_session()
-    print("Session ended")
-
-    
+# Main execution loop
 if __name__ == "__main__":
+    import sys
+    import asyncio
+    
+    nova = None
+    
+    async def handle_stdin():
+        """Handle commands from server.js via stdin"""
+        global nova
+        
+        while True:
+            try:
+                line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
+                if not line:
+                    break
+                    
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                try:
+                    command = json.loads(line)
+                    print(f"💬 STDIN COMMAND: {command.get('type', 'unknown')}", flush=True)
+                    
+                    if command["type"] == "start_session":
+                        if nova:
+                            await nova.end_session()
+                        nova = NovaSonic(
+                            session_id=command.get("session_id", "default"),
+                            voice_id=command.get("voice_id"),
+                        )
+                        await nova.start_session()
+                        
+                    elif command["type"] == "start_audio" and nova:
+                        await nova.start_audio_input()
+                        
+                    elif command["type"] == "audio" and nova:
+                        audio_data = base64.b64decode(command["data"])
+                        await nova.send_audio_chunk(audio_data)
+                        
+                    elif command["type"] == "end_audio" and nova:
+                        await nova.end_audio_input()
+                        
+                    elif command["type"] == "evaluate_empathy" and nova:
+                        # Handle manual empathy evaluation from server.js
+                        print(f"🧠 STDIN: Processing empathy evaluation request", flush=True)
+                        asyncio.create_task(nova.handle_manual_empathy_evaluation(
+                            command["text"], 
+                            command.get("session_id")
+                        ))
+                        
+                    elif command["type"] == "text" and nova:
+                        # Handle text input (if needed)
+                        print(f"💬 TEXT INPUT: {command.get('data', '')[:50]}...", flush=True)
+                        
+                    elif command["type"] == "end_session" and nova:
+                        await nova.end_session()
+                        nova = None
+                        
+                except json.JSONDecodeError as je:
+                    print(f"❌ JSON DECODE ERROR: {je} - Line: {line}", flush=True)
+                except Exception as cmd_error:
+                    print(f"❌ COMMAND ERROR: {cmd_error}", flush=True)
+                    logger.error(f"Command processing error: {cmd_error}")
+                    
+            except Exception as e:
+                print(f"❌ STDIN ERROR: {e}", flush=True)
+                logger.error(f"Stdin handling error: {e}")
+                break
+    
+    async def main():
+        """Main async function"""
+        global nova
+        
+        try:
+            print(f"🚀 Nova Sonic Python process started", flush=True)
+            logger.info("Nova Sonic process initialized")
+            
+            # Auto-start session if environment variables are present
+            session_id = os.getenv("SESSION_ID", "default")
+            voice_id = os.getenv("VOICE_ID")
+            
+            if session_id != "default":
+                print(f"🚀 Auto-starting Nova Sonic session: {session_id}", flush=True)
+                nova = NovaSonic(session_id=session_id, voice_id=voice_id)
+                await nova.start_session()
+            
+            # Handle stdin commands
+            await handle_stdin()
+            
+        except KeyboardInterrupt:
+            print(f"🚫 Nova Sonic process interrupted", flush=True)
+            logger.info("Nova Sonic process interrupted by user")
+        except Exception as e:
+            print(f"❌ Nova Sonic process error: {e}", flush=True)
+            logger.error(f"Nova Sonic process error: {e}")
+        finally:
+            if nova:
+                try:
+                    await nova.end_session()
+                except:
+                    pass
+            print(f"🚫 Nova Sonic process ended", flush=True)
+            logger.info("Nova Sonic process ended")
+    
+    # Run the main async function
     asyncio.run(main())
