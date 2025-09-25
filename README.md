@@ -1,5 +1,5 @@
 # Empathetic Communication
-This project leverages Large Language Models (LLMs) to revolutionize pharmacy education by enabling students to conduct realistic virtual patient interviews with diverse scenarios and personalities. By addressing limitations in existing tools, the prototype fosters practical skill development and offers scalable, GenAI-driven solutions for clinical education across institutions.
+This project harnesses generative AI on AWS Cloud Infrastructure to help healthcare students practice and develop empathetic communication skills for patient care. The tool uses Retrieval Augmented Generation and Large Language Models to create realistic patient training scenarios, provide structured empathy feedback, and evaluate student performance across key empathy dimensions. Students and instructors can track progress and learn from detailed feedback, supporting stronger empathetic communication practice and interactive training within healthcare education.
 
 
 | Index                                               | Description                                             |
