@@ -145,6 +145,13 @@ else:
 
 ## Prompt Engineering
 
+### Admin Control
+The empathy coach prompt can be **controlled and adjusted by administrators** through the **Admin View** under **"AI Settings"**. This allows for:
+- Real-time prompt modifications without code deployment
+- A/B testing of different evaluation approaches
+- Fine-tuning based on student performance data
+- Customization for different pharmacy programs or specializations
+
 ### Main Evaluation Prompt
 **Location:** `evaluate_empathy()`
 
