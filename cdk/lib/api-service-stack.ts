@@ -688,7 +688,7 @@ export class ApiServiceStack extends cdk.Stack {
         vpc: vpcStack.vpc,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
         },
         functionName: `${id}-adminFunction`,
         memorySize: 512,
@@ -850,7 +850,7 @@ export class ApiServiceStack extends cdk.Stack {
         timeout: Duration.seconds(300),
         environment: {
           SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
         },
         vpc: vpcStack.vpc,
         functionName: `${id}-addStudentOnSignUp`,
@@ -867,7 +867,7 @@ export class ApiServiceStack extends cdk.Stack {
       timeout: Duration.seconds(300),
       environment: {
         SM_DB_CREDENTIALS: db.secretPathTableCreator.secretName,
-        RDS_PROXY_ENDPOINT: db.rdsProxyEndpointTableCreator,
+        RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
       },
       vpc: db.dbInstance.vpc,
       functionName: `${id}-adjustUserRoles`,
@@ -1110,7 +1110,7 @@ export class ApiServiceStack extends cdk.Stack {
         functionName: `${id}-TextGenLambdaDockerFunction`,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointAdmin,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
           REGION: this.region,
           BEDROCK_LLM_PARAM: bedrockLLMParameter.parameterName,
           EMBEDDING_MODEL_PARAM: embeddingModelParameter.parameterName,
@@ -1302,7 +1302,7 @@ export class ApiServiceStack extends cdk.Stack {
         functionName: `${id}-DataIngestLambdaDockerFunction`,
         environment: {
           SM_DB_CREDENTIALS: db.secretPathAdminName,
-          RDS_PROXY_ENDPOINT: db.rdsProxyEndpointAdmin,
+          RDS_PROXY_ENDPOINT: db.rdsProxyEndpoint, // Using single consolidated proxy
           BUCKET: dataIngestionBucket.bucketName,
           REGION: this.region,
           EMBEDDING_BUCKET_NAME: embeddingStorageBucket.bucketName,
