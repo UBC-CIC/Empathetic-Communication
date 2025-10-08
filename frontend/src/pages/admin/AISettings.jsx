@@ -29,7 +29,7 @@ import { fetchAuthSession } from "aws-amplify/auth";
 
 const AISettings = () => {
   const { user } = useAuthentication();
-  const [tokenLimit, setTokenLimit] = useState(50000);
+  const [tokenLimit, setTokenLimit] = useState(20000);
   const [selectedUser, setSelectedUser] = useState("");
   const [users, setUsers] = useState([]);
   const [systemPrompt, setSystemPrompt] = useState("");
