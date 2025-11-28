@@ -75,55 +75,38 @@ Before using these workflows, you must complete the following AWS setup:
        --profile <YOUR-PROFILE-NAME>
    ```
 
-2. **Create IAM Role for GitHub Actions**
+2. **Create IAM User for GitHub Actions**
 
-   You need to set up OIDC authentication between GitHub and AWS. This role will be used by GitHub Actions to deploy resources.
+   Create an IAM user with programmatic access for GitHub Actions deployments.
 
+   **Using AWS Console:**
+   1. Go to IAM → Users → Create user
+   2. User name: `github-actions-deployment`
+   3. Click "Next"
+   4. Select "Attach policies directly"
+   5. Attach the following policies:
+      - `AdministratorAccess` (or create a custom policy with least privilege)
+   6. Click "Next" → "Create user"
+   7. Go to the user → Security credentials → Create access key
+   8. Select "Command Line Interface (CLI)"
+   9. Confirm and create access key
+   10. **Save the Access Key ID and Secret Access Key** (you'll need these for GitHub secrets)
+
+   **Using AWS CLI:**
    ```bash
-   # Create an OIDC provider for GitHub (only needed once per AWS account)
-   aws iam create-open-id-connect-provider \
-       --url https://token.actions.githubusercontent.com \
-       --client-id-list sts.amazonaws.com \
-       --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
-   ```
-
-   Then create an IAM role with a trust policy for GitHub Actions:
-
-   **Trust Policy Example (`github-actions-trust-policy.json`):**
-   ```json
-   {
-     "Version": "2012-10-17",
-     "Statement": [
-       {
-         "Effect": "Allow",
-         "Principal": {
-           "Federated": "arn:aws:iam::<AWS-ACCOUNT-ID>:oidc-provider/token.actions.githubusercontent.com"
-         },
-         "Action": "sts:AssumeRoleWithWebIdentity",
-         "Condition": {
-           "StringEquals": {
-             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-           },
-           "StringLike": {
-             "token.actions.githubusercontent.com:sub": "repo:<YOUR-GITHUB-USERNAME>/Empathetic-Communication:*"
-           }
-         }
-       }
-     ]
-   }
-   ```
-
-   Create the role:
-   ```bash
-   aws iam create-role \
-       --role-name GitHubActionsDeploymentRole \
-       --assume-role-policy-document file://github-actions-trust-policy.json
+   # Create IAM user
+   aws iam create-user --user-name github-actions-deployment
    
-   # Attach necessary policies (adjust as needed)
-   aws iam attach-role-policy \
-       --role-name GitHubActionsDeploymentRole \
+   # Attach AdministratorAccess policy (adjust as needed for least privilege)
+   aws iam attach-user-policy \
+       --user-name github-actions-deployment \
        --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+   
+   # Create access key
+   aws iam create-access-key --user-name github-actions-deployment
    ```
+   
+   **Important:** Save the `AccessKeyId` and `SecretAccessKey` from the output.
 
 ### GitHub Secrets Configuration
 
@@ -132,8 +115,9 @@ Add the following secrets to your GitHub repository:
 **Settings → Secrets and variables → Actions → New repository secret**
 
 | Secret Name | Description | Example |
-|------------|-------------|---------|
-| `AWS_ROLE_ARN` | ARN of the IAM role for GitHub Actions | `arn:aws:iam::123456789012:role/GitHubActionsDeploymentRole` |
+|------------|-------------|---------||
+| `AWS_ACCESS_KEY_ID` | Access Key ID from IAM user | `AKIAIOSFODNN7EXAMPLE` |
+| `AWS_SECRET_ACCESS_KEY` | Secret Access Key from IAM user | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` |
 | `AWS_ACCOUNT_ID` | Your AWS Account ID | `123456789012` |
 | `STACK_PREFIX` | (Optional) Prefix for stack resources | `Empathetic-Communication` |
 
@@ -214,8 +198,9 @@ Then publish the release through GitHub UI or CLI, which will automatically trig
    - Or the workflow will attempt to bootstrap automatically
 
 2. **"Insufficient Permissions" Error**
-   - Verify IAM role has necessary permissions
-   - Check the role trust policy allows your GitHub repository
+   - Verify IAM user has necessary permissions attached
+   - Check that the access key is active and not expired
+   - Verify the correct AWS account is being used
 
 3. **"Docker Command Not Found"**
    - Ensure Docker daemon is running
@@ -267,15 +252,19 @@ To remove all deployed resources:
 ## Security Considerations
 
 - **Never commit AWS credentials** to the repository
-- **Use IAM roles with least privilege** - adjust the AdministratorAccess policy as needed
+- **Use IAM users with least privilege** - adjust the AdministratorAccess policy as needed for production
+- **Rotate AWS access keys regularly** - AWS recommends rotation every 90 days
 - **Rotate secrets regularly**, especially the GitHub personal access token
 - **Review CloudFormation stack policies** for production deployments
 - **Enable AWS CloudTrail** for audit logging
 - **Use branch protection rules** to prevent unauthorized deployments
+- **Store access keys securely** - only in GitHub Secrets, never in code or logs
+- **Monitor IAM user activity** - regularly review CloudTrail logs for the deployment user
 
 ## Additional Resources
 
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
 - [AWS Amplify Documentation](https://docs.amplify.aws/)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [Configuring OIDC in AWS](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services)
+- [AWS IAM Best Practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
+- [Managing AWS Access Keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)
