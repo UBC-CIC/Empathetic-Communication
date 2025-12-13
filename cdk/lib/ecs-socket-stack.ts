@@ -6,13 +6,14 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
-import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import { VpcStack } from "./vpc-stack";
 import { DatabaseStack } from "./database-stack";
 
 export class EcsSocketStack extends Stack {
   public readonly socketUrl: string;
+  public readonly nlbDnsName: string;
+  public readonly albDnsName: string;
+  public readonly albArn: string;
 
   constructor(
     scope: Construct,
@@ -146,39 +147,41 @@ export class EcsSocketStack extends Stack {
       },
     });
 
-    // 5) ECS service
+    // 5) ECS service - deployed in PRIVATE subnets
     const service = new ecs.FargateService(this, "SocketService", {
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 2, // Always keep 2 running to prevent cold starts
-      assignPublicIp: true,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      desiredCount: 1, // Start with 1 task (will scale down after deploy if needed)
+      assignPublicIp: false, // No public IPs
+      vpcSubnets: { subnets: vpcStack.frontPrivateSubnets },
+      deploymentController: {
+        type: ecs.DeploymentControllerType.ECS,
+      },
     });
 
-    // 5.1) Allow the NLB (and CloudFront via NLB) to reach your service on port 80
-    service.connections.allowFromAnyIpv4(
-      ec2.Port.tcp(80),
-      "AllowHTTPFromLoadBalancer"
-    );
-    
-    // Allow NLB to reach ECS service from VPC
+    // Allow load balancers to reach ECS service on port 80
     service.connections.allowFrom(
       ec2.Peer.ipv4(vpc.vpcCidrBlock),
       ec2.Port.tcp(80),
-      "Allow NLB to reach ECS service"
+      "Allow load balancers to reach ECS service"
     );
 
-    // 6) Network Load Balancer on TCP 80
+    // ============================================
+    // NETWORK LOAD BALANCER (TCP/UDP protocols)
+    // ============================================
     const nlb = new elbv2.NetworkLoadBalancer(this, "SocketNLB", {
       vpc,
-      internetFacing: true,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      internetFacing: false, // Private NLB for VPC access only
+      vpcSubnets: { subnets: vpcStack.frontPrivateSubnets },
+      loadBalancerName: `${id.replace(/Stack/g, "")}-socket-nlb`,
     });
-    const listener = nlb.addListener("TcpListener", {
+
+    const nlbListener = nlb.addListener("NlbTcpListener", {
       port: 80,
       protocol: elbv2.Protocol.TCP,
     });
-    listener.addTargets("EcsTargetGroupV2", {
+
+    nlbListener.addTargets("NlbEcsTargets", {
       protocol: elbv2.Protocol.TCP,
       port: 80,
       targets: [service],
@@ -186,37 +189,108 @@ export class EcsSocketStack extends Stack {
         protocol: elbv2.Protocol.TCP,
         port: "80",
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
+        unhealthyThresholdCount: 5,
         interval: Duration.seconds(30),
         timeout: Duration.seconds(10),
       },
+      deregistrationDelay: Duration.seconds(120),
     });
 
-    // 7) CloudFront distribution in front of the NLB
-    const distro = new cloudfront.Distribution(this, "SocketDistro", {
-      defaultBehavior: {
-        origin: new origins.HttpOrigin(nlb.loadBalancerDnsName, {
-          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-        }),
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    // ============================================
+    // APPLICATION LOAD BALANCER (WebSocket/HTTP)
+    // ============================================
+    const alb = new elbv2.ApplicationLoadBalancer(this, "SocketALB", {
+      vpc,
+      internetFacing: false, // Private ALB for VPC access only
+      vpcSubnets: { subnets: vpcStack.frontPrivateSubnets },
+      loadBalancerName: `${id.replace(/Stack/g, "")}-socket-alb`,
+    });
+
+    const albListener = alb.addListener("AlbListener", {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+    });
+
+    albListener.addTargets("AlbEcsTargets", {
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      port: 80,
+      targets: [service],
+      healthCheck: {
+        path: "/",
+        protocol: elbv2.Protocol.HTTP,
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 10,
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(10),
       },
+      deregistrationDelay: Duration.seconds(120),
     });
 
-    // 8) Output both CloudFront and direct NLB URLs
-    this.socketUrl = `wss://${distro.domainName}`;
-    new CfnOutput(this, "SocketUrl", {
-      value: this.socketUrl,
-      description: "WebSocket server URL via CloudFront + NLB",
-      exportName: `${id}-SocketUrl`,
+    // ============================================
+    // CROSS-ACCOUNT ACCESS SETUP
+    // ============================================
+    // ALB security group - allow ingress from any VPC CIDR (configure in consuming account)
+    const albSecurityGroup = alb.connections.securityGroups[0];
+    albSecurityGroup.addIngressRule(
+      ec2.Peer.ipv4("10.0.0.0/8"), // RFC 1918 private range - adjust as needed
+      ec2.Port.tcp(80),
+      "Allow private network access to WebSocket ALB"
+    );
+
+    // Note: NLB does not use security groups - traffic control is handled at the target level
+
+    // ============================================
+    // OUTPUTS FOR CROSS-ACCOUNT CONSUMPTION
+    // ============================================
+    this.nlbDnsName = nlb.loadBalancerDnsName;
+    this.albDnsName = alb.loadBalancerDnsName;
+    this.albArn = alb.loadBalancerArn;
+    this.socketUrl = `ws://${alb.loadBalancerDnsName}`; // Internal WebSocket URL
+
+    // Output NLB for direct TCP access (VPC peering, PrivateLink, etc.)
+    new CfnOutput(this, "NetworkLoadBalancerDnsName", {
+      value: this.nlbDnsName,
+      description: "NLB DNS Name for cross-VPC/cross-account access via VPC peering or PrivateLink",
+      exportName: `${id}-NLB-DNS`,
     });
-    
-    new CfnOutput(this, "DirectSocketUrl", {
-      value: `ws://${nlb.loadBalancerDnsName}`,
-      description: "Direct WebSocket server URL (bypasses CloudFront)",
-      exportName: `${id}-DirectSocketUrl`,
+
+    new CfnOutput(this, "NetworkLoadBalancerArn", {
+      value: nlb.loadBalancerArn,
+      description: "NLB ARN for cross-account access",
+      exportName: `${id}-NLB-ARN`,
+    });
+
+    // Output ALB for HTTP/WebSocket access
+    new CfnOutput(this, "ApplicationLoadBalancerDnsName", {
+      value: this.albDnsName,
+      description: "ALB DNS Name for WebSocket connections within same VPC or via VPC peering",
+      exportName: `${id}-ALB-DNS`,
+    });
+
+    new CfnOutput(this, "ApplicationLoadBalancerArn", {
+      value: this.albArn,
+      description: "ALB ARN for cross-account access",
+      exportName: `${id}-ALB-ARN`,
+    });
+
+    // Output internal WebSocket URL
+    new CfnOutput(this, "InternalWebSocketUrl", {
+      value: this.socketUrl,
+      description: "Internal WebSocket server URL (ws:// protocol)",
+      exportName: `${id}-WebSocket-URL`,
+    });
+
+    // Export front subnet IDs used by the service and load balancers to validate placement
+    new CfnOutput(this, "FrontSubnetIds", {
+      value: cdk.Fn.join(",", vpcStack.frontPrivateSubnets.map((s: ec2.ISubnet) => (s as any).subnetId)),
+      description: "Comma-separated front private subnet IDs used for ECS and ALBs",
+      exportName: `${id}-Front-Subnets`,
+    });
+
+    // Documentation for cross-account setup
+    new CfnOutput(this, "CrossAccountAccessGuide", {
+      value: "For cross-account access: 1) Set up VPC peering/PrivateLink, 2) Update security group rules to allow consuming account VPC CIDR, 3) Use ALB DNS name from outputs above",
+      description: "Steps for cross-account access configuration",
     });
   }
 }
