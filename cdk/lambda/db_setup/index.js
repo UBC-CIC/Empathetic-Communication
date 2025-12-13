@@ -156,26 +156,29 @@ async function createAppUsers(
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tablecreator;
 
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO readwrite;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tablecreator;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO tablecreator;
 
     GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO readwrite;
     GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO tablecreator;
 
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO readwrite;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO tablecreator;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tablecreator;
 
     DO $$
+    DECLARE
+      rw_pass TEXT := '${rwPass}';
+      tc_pass TEXT := '${tcPass}';
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${RW_NAME}') THEN
-        EXECUTE format('CREATE USER ${RW_NAME} WITH PASSWORD %L', '${rwPass}');
+        EXECUTE format('CREATE USER %I WITH PASSWORD %L', '${RW_NAME}', rw_pass);
       ELSE
-        EXECUTE format('ALTER USER ${RW_NAME} WITH PASSWORD %L', '${rwPass}');
+        EXECUTE format('ALTER USER %I WITH PASSWORD %L', '${RW_NAME}', rw_pass);
       END IF;
 
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${TC_NAME}') THEN
-        EXECUTE format('CREATE USER ${TC_NAME} WITH PASSWORD %L', '${tcPass}');
+        EXECUTE format('CREATE USER %I WITH PASSWORD %L', '${TC_NAME}', tc_pass);
       ELSE
-        EXECUTE format('ALTER USER ${TC_NAME} WITH PASSWORD %L', '${tcPass}');
+        EXECUTE format('ALTER USER %I WITH PASSWORD %L', '${TC_NAME}', tc_pass);
       END IF;
     END$$;
 

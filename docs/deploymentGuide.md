@@ -21,7 +21,15 @@
   - [Cleanup](#cleanup)
     - [Taking down the deployed stack](#taking-down-the-deployed-stack)
 
-## Requirements
+## Deployment Steps
+
+### CDK CLI usage
+- Always run CDK commands from the `cdk/` folder and use the local CLI via `npx` so `cdk.json` is honored.
+- If you run from the repository root, pass `--app` explicitly.
+
+Examples (PowerShell):
+
+```pwsh
 Before you deploy, you must have the following installed on your device:
 - [git](https://git-scm.com/downloads)
 - [AWS Account](https://aws.amazon.com/account/)
@@ -32,28 +40,151 @@ Before you deploy, you must have the following installed on your device:
 - [node](https://nodejs.org/en/ln/getting-started/how-to-install-nodejs) *(v20.0.0 > required)*
 - [docker](https://www.docker.com/products/docker-desktop/)
 
+**⚠️ Docker Configuration for Lambda Compatibility:**
+
+If you're using Docker Desktop 28.x or newer, you must disable BuildKit before CDK deployments to ensure Lambda-compatible image formats:
+
+**PowerShell (Windows):**
+```powershell
+$env:DOCKER_BUILDKIT=0
+$env:DOCKER_CLI_HINTS="false"
+```
+
+**Bash/Terminal (macOS/Linux):**
+```bash
+export DOCKER_BUILDKIT=0
+export DOCKER_CLI_HINTS=false
+```
+
+These environment variables must be set in the same terminal session before running `npx cdk deploy`.
+
+**Alternative:** Create `~/.docker/config.json` with:
+```json
+{
+  "features": {
+    "buildkit": false
+  }
+}
+```
+
+See [Troubleshooting Guide - Docker BuildKit](./troubleshootingGuide.md#docker-buildkit-and-lambda-compatibility) for details.
+
+**Using BuildKit safely for manual builds (outside CDK):**
+
+When using BuildKit intentionally, produce Lambda-compatible manifests by using `buildx` with `--output=type=docker` and disable provenance metadata which Lambda rejects:
+
+```powershell
+$AWS_REGION = "ca-central-1"
+$ACCOUNT_ID = (aws sts get-caller-identity --query Account --output text)
+aws ecr create-repository --repository-name my-lambda-image --region $AWS_REGION 2>$null
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+docker buildx create --use --name lambda-builder
+docker buildx inspect --bootstrap
+
+docker buildx build \
+  --platform linux/amd64 \
+  --output=type=docker \
+  --provenance=false \
+  -t "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/my-lambda-image:latest" \
+  ./cdk/data_ingestion
+
+docker push "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/my-lambda-image:latest"
+
+aws lambda update-function-code \
+  --function-name Empath-AI-DataIngestLambdaDockerFunc \
+  --image-uri "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/my-lambda-image:latest" \
+  --region $AWS_REGION
+```
+
+
+### VPC import (existing VPC)
+- The stack supports importing an existing VPC by specifying private subnet IDs and their route table IDs in `cdk/lib/vpc-stack.ts`.
+- It adapts to however many subnets you provide (1–3 AZs). **Minimum 2 subnets in different AZs required for RDS Multi-AZ deployment.**
+- When using specific subnets, you **MUST** use the correct VPC CIDR that contains your subnets. This is critical for security group rules.
+
+**⚠️ Important:** Your VPC may have multiple CIDR blocks. Always verify which CIDR block contains your subnets.
+
+Required values in `vpc-stack.ts`:
+- `existingVpcId`: your VPC ID
+- `backendSubnetId`, `backendSubnetId2`: private subnet IDs in different AZs (at least 2 required)
+- `backendSubnetId3`: optional third subnet for additional AZ
+- `backendRouteTableId`, `backendRouteTableId2`, `backendRouteTableId3`: route table IDs for each subnet
+- `this.vpcCidrString`: **The CIDR block that contains your subnets** (may be a secondary CIDR, not the primary!)
+
+**Finding the correct VPC CIDR (PowerShell):**
+```pwsh
+# Get ALL CIDR blocks (including secondary) - VPCs can have multiple CIDRs
+aws ec2 describe-vpcs --vpc-ids <vpc-id> `
+  --query "Vpcs[0].CidrBlockAssociationSet[*].CidrBlock" `
+  --output table --profile <your-profile>
+
+# Get your subnet CIDR blocks
+aws ec2 describe-subnets --subnet-ids <subnet-id-1> <subnet-id-2> `
+  --query "Subnets[*].[SubnetId,CidrBlock]" `
+  --output table --profile <your-profile>
+
+# Use the VPC CIDR that contains your subnet CIDRs
+# Example: If VPC has 10.102.252.160/27 and 10.102.0.0/25
+#          and subnets are 10.102.0.64/27 and 10.102.0.96/27
+#          Use: this.vpcCidrString = "10.102.0.0/25"
+```
+
+**Finding route table IDs (PowerShell):**
+```pwsh
+aws ec2 describe-route-tables `
+  --filters "Name=association.subnet-id,Values=<subnet-id>" `
+  --query "RouteTables[0].RouteTableId" `
+  --output text --profile <your-profile>
+```
+
+**First-time RDS deployment:**
+If this is the first time deploying RDS in your AWS account, create the service-linked role:
+```pwsh
+aws iam create-service-linked-role --aws-service-name rds.amazonaws.com --profile <your-profile>
+```
+
+For detailed VPC import instructions, see [ExistingVPCDeployment.md](./ExistingVPCDeployment.md).
+
 ## Package Management
 
 This project uses [Poetry](https://python-poetry.org/) for Python dependency management to ensure consistent, reproducible builds across all environments. See [PYTHON_PACKAGE_MANAGEMENT.md](./PYTHON_PACKAGE_MANAGEMENT.md) for complete setup instructions.
 
 ### Quick Setup
+
+### Common errors and fixes
+- Error: `--app is required either in command-line, in cdk.json or in ~/.cdk.json`
 ```bash
 # Install Poetry
+
+- Error: `AWS::EarlyValidation::PropertyValidation` during `Empath-AI-VpcStack` deploy
 curl -sSL https://install.python-poetry.org | py  # Windows
 curl -sSL https://install.python-poetry.org | python3 -  # macOS/Linux
 
 # Install export plugin
 poetry self add poetry-plugin-export
 
+- Warning: `No routeTableId was provided to the subnet ...` (link: https://github.com/aws/aws-cdk/pull/3171)
+
 # Install CDK dependencies
+
+### Recommended deployment sequence
+1. Deploy VPC stack first to validate VPC endpoints and security groups:
+```pwsh
 cd cdk
 npm install
 
 # Deploy it now (Poetry handles Python dependencies automatically)
+2. Deploy the rest:
+```pwsh
 ```
 
 **Note:** Poetry dependencies are installed automatically during Docker builds - no manual `poetry install` required for deployment.
 
+
+### Notes
+- Using private subnets only is supported; public subnets are not required for this architecture.
+- If you later add more subnets for additional AZs, update `vpc-stack.ts` with their IDs and route tables, then redeploy.
 ## Pre-Deployment
 ### Create GitHub Personal Access Token
 To deploy this solution, you will need to generate a GitHub personal access token. Please visit [here](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) for detailed instruction to create a personal access token.
@@ -211,7 +342,7 @@ aws secretsmanager create-secret ^
 ```powershell
 aws secretsmanager create-secret `
     --name VCISecrets `
-    --secret-string "{\"DB_Username\":\"<YOUR-DB-USERNAME>\"}"`
+    --secret-string '{\"DB_Username\":\"<YOUR-DB-USERNAME>\"}' `
     --profile <your-profile-name>
 ```
 </details>
@@ -409,8 +540,30 @@ cdk deploy --all --parameters Empathetic-Communication-Amplify:githubRepoName=EM
 7. For `Type` select `404 (Redirect)`
 8. Click `Save`
 
-### Step 3: Visit Web App
+### Step 3: Configure Socket URL
+
+The deployment outputs two load balancer DNS names:
+- **ALB DNS Name**: For WebSocket connections (recommended)
+- **NLB DNS Name**: For raw TCP connections
+
+Update your Amplify environment variables with the ALB DNS name:
+
+1. In Amplify Console, go to your app → App settings → Environment variables
+2. Update or add `VITE_SOCKET_URL` with:
+   ```
+   ws://socket-alb-xxxxx.us-east-1.elb.amazonaws.com
+   ```
+3. Redeploy the app
+
+### Step 4: Visit Web App
 You can now navigate to the web app URL to see your application in action.
+
+## Cross-Account Access
+
+For multi-account deployments where different AWS accounts need to access this service, see [CROSS_ACCOUNT_DEPLOYMENT.md](./CROSS_ACCOUNT_DEPLOYMENT.md) for detailed setup instructions using:
+- **VPC Peering**: Direct network-to-network connectivity
+- **AWS PrivateLink**: Private service endpoints
+- **VPC Endpoints**: Managed connectivity solution
 
 ## Cleanup
 ### Taking down the deployed stack

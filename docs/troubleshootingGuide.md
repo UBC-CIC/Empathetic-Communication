@@ -1,7 +1,213 @@
 # Troubleshooting Guide
 
+## Network Connectivity Issues
+
+### Lambda Cannot Connect to RDS
+
+**Symptoms:**
+- DBFlow stack fails during deployment
+- Error: `Error: connect ETIMEDOUT <IP>:5432`
+- Lambda function times out when trying to connect to database
+
+**Diagnosis Steps:**
+
+1. **Check VPC CIDR Configuration:**
+   ```bash
+   # Get all CIDR blocks associated with your VPC
+   aws ec2 describe-vpcs --vpc-ids <vpc-id> \
+     --query "Vpcs[0].CidrBlockAssociationSet" \
+     --profile <your-profile>
+   ```
+   
+   Look for multiple CIDR blocks. Your VPC may have:
+   - Primary CIDR (e.g., `10.102.252.160/27`)
+   - Secondary CIDR (e.g., `10.102.0.0/25`)
+
+2. **Verify Subnet CIDR Ranges:**
+   ```bash
+   # Check which CIDR block contains your subnets
+   aws ec2 describe-subnets --subnet-ids <subnet-id-1> <subnet-id-2> \
+     --query "Subnets[*].[SubnetId,CidrBlock]" \
+     --output table --profile <your-profile>
+   ```
+
+3. **Check RDS Security Group Rules:**
+   ```bash
+   # Get RDS security group
+   aws rds describe-db-instances \
+     --query "DBInstances[0].VpcSecurityGroups[*].VpcSecurityGroupId" \
+     --output text --profile <your-profile>
+   
+   # Check security group ingress rules
+   aws ec2 describe-security-groups --group-ids <sg-id> \
+     --query "SecurityGroups[0].IpPermissions" \
+     --profile <your-profile>
+   ```
+
+**Solution:**
+
+Ensure the VPC CIDR in `cdk/lib/vpc-stack.ts` matches the CIDR block that contains your subnets:
+
+```typescript
+// If subnets are 10.102.0.64/27 and 10.102.0.96/27
+// Use the parent CIDR that contains them:
+this.vpcCidrString = "10.102.0.0/25"; // NOT "10.102.252.160/27"
+```
+
+The database security group rule must allow traffic from this CIDR range for Lambda to connect successfully.
+
+### VPC CIDR Mismatch
+
+**Problem:** Resources in different subnets cannot communicate even though security groups are correctly configured.
+
+**Root Cause:** The VPC CIDR configured in CDK doesn't match the actual CIDR block where subnets are located.
+
+**How VPCs Can Have Multiple CIDRs:**
+- AWS allows associating multiple CIDR blocks to a single VPC
+- The primary CIDR is set at VPC creation
+- Secondary CIDRs can be added later to expand the IP address space
+- Subnets can be created in any associated CIDR block
+
+**Solution:**
+1. List all CIDR blocks: `aws ec2 describe-vpcs --vpc-ids <vpc-id>`
+2. Identify which CIDR contains your subnets
+3. Update `this.vpcCidrString` in `vpc-stack.ts` to use that CIDR
+4. Redeploy the Database and VPC stacks to update security group rules
+
+### Security Group Configuration
+
+**Verifying Security Group Rules:**
+
+```bash
+# Check Lambda security group
+aws lambda get-function --function-name <function-name> \
+  --query "Configuration.VpcConfig.SecurityGroupIds" \
+  --profile <your-profile>
+
+# Check what the Lambda SG allows
+aws ec2 describe-security-groups --group-ids <lambda-sg-id> \
+  --query "SecurityGroups[0].IpPermissionsEgress" \
+  --profile <your-profile>
+
+# Verify RDS allows Lambda's subnet CIDR
+aws ec2 describe-security-groups --group-ids <rds-sg-id> \
+  --query "SecurityGroups[0].IpPermissions" \
+  --profile <your-profile>
+```
+
+**Expected Configuration:**
+- RDS security group should have ingress rule allowing port 5432 from VPC CIDR
+- Lambda needs ENI (Elastic Network Interface) in the same VPC
+- Network ACLs should allow bidirectional traffic (default allows all)
+
+## Deployment Issues
+
+### RDS Service-Linked Role Missing
+
+**Symptoms:**
+- Database stack fails with status code 403
+- Error: `RDS is not authorized to assume service-linked role arn:aws:iam::<account>:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS`
+
+**Cause:** First-time RDS deployment in the AWS account requires creating a service-linked role.
+
+**Solution:**
+
+```bash
+# Create the service-linked role
+aws iam create-service-linked-role \
+  --aws-service-name rds.amazonaws.com \
+  --profile <your-profile>
+
+# Verify it was created
+aws iam get-role \
+  --role-name AWSServiceRoleForRDS \
+  --profile <your-profile>
+```
+
+After creating the role, redeploy the stack:
+```bash
+cd cdk
+npx cdk deploy Empath-AI-Database --profile <your-profile>
+```
+
+### Stack Rollback States
+
+**Problem:** Cannot update a stack that's in `ROLLBACK_COMPLETE` or `ROLLBACK_IN_PROGRESS` state.
+
+**Solution:**
+
+```bash
+# Wait for rollback to complete if in progress
+aws cloudformation wait stack-rollback-complete \
+  --stack-name <stack-name> \
+  --profile <your-profile>
+
+# Delete the failed stack
+aws cloudformation delete-stack \
+  --stack-name <stack-name> \
+  --profile <your-profile>
+
+# Wait for deletion
+aws cloudformation wait stack-delete-complete \
+  --stack-name <stack-name> \
+  --profile <your-profile>
+
+# Redeploy
+cd cdk
+npx cdk deploy <stack-name> --profile <your-profile>
+```
+
+### SQL Migration Errors
+
+**Symptoms:**
+- DBFlow stack fails with: `Error: syntax error at or near "s"`
+- Migration Lambda completes but with SQL errors
+
+**Common Causes:**
+1. **Improper variable interpolation in PostgreSQL `format()` statements**
+2. **Missing escape sequences for special characters**
+3. **Nested string interpolation in DO blocks**
+
+**Example Fix:**
+
+❌ **Incorrect:**
+```javascript
+const sql = `
+  DO $$
+  BEGIN
+    EXECUTE format('CREATE USER ${USERNAME} WITH PASSWORD %L', '${password}');
+  END$$;
+`;
+```
+
+✅ **Correct:**
+```javascript
+const sql = `
+  DO $$
+  DECLARE
+    pwd TEXT := '${password}';
+  BEGIN
+    EXECUTE format('CREATE USER %I WITH PASSWORD %L', '${USERNAME}', pwd);
+  END$$;
+`;
+```
+
+**Key Points:**
+- Use `%I` for identifiers (table/column names)
+- Use `%L` for literal values (strings/passwords)
+- Declare variables in `DECLARE` block to avoid nested interpolation
+- Test SQL directly in psql before deploying
+
 ## Table of Contents
 - [Troubleshooting Guide](#troubleshooting-guide)
+  - [Network Connectivity Issues](#network-connectivity-issues)
+    - [Lambda Cannot Connect to RDS](#lambda-cannot-connect-to-rds)
+    - [VPC CIDR Mismatch](#vpc-cidr-mismatch)
+    - [Security Group Configuration](#security-group-configuration)
+  - [Deployment Issues](#deployment-issues)
+    - [RDS Service-Linked Role Missing](#rds-service-linked-role-missing)
+    - [Stack Rollback States](#stack-rollback-states)
+    - [SQL Migration Errors](#sql-migration-errors)
   - [SageMaker Notebook for Troubleshooting](#sagemaker-notebook-for-troubleshooting)
     - [Motivation](#motivation)
     - [Creating Notebook Instance](#creating-notebook-instance)
@@ -196,6 +402,63 @@ To verify that embeddings are properly created, you first need to find the right
    - This total embedding count is helpful for verifying the overall ingestion health of your database.
 
 ## Docker Issues
+
+### Docker BuildKit and Lambda Compatibility
+
+**Symptoms:**
+- Lambda deployment fails with error: `The image manifest, config or layer media type for the source image ... is not supported`
+- Error code: 400, InvalidRequest
+- Occurs when deploying Lambda functions with Docker containers
+
+**Cause:**
+Docker Desktop 28.x and newer versions default to using BuildKit with OCI image format, which creates manifest lists that AWS Lambda doesn't support. Lambda requires Docker manifest v2 schema 2 format.
+
+**Solution:**
+
+Set environment variables before running CDK deploy to disable BuildKit:
+
+**PowerShell:**
+```powershell
+$env:DOCKER_BUILDKIT=0
+$env:DOCKER_CLI_HINTS="false"
+
+# Then deploy
+cd cdk
+npx cdk deploy --all --profile <your-profile>
+```
+
+**Bash/macOS:**
+```bash
+export DOCKER_BUILDKIT=0
+export DOCKER_CLI_HINTS=false
+
+# Then deploy
+cd cdk
+npx cdk deploy --all --profile <your-profile>
+```
+
+**Alternative: Create a permanent Docker config**
+
+Create or edit `~/.docker/config.json` (Windows: `%USERPROFILE%\.docker\config.json`):
+```json
+{
+  "features": {
+    "buildkit": false
+  }
+}
+```
+
+**Verification:**
+
+After deployment starts, you should see Docker build output without BuildKit messages. Successful deployment will show:
+- Docker images building without "[buildkit]" prefix in logs
+- Lambda functions creating successfully
+- No manifest media type errors
+
+**Note:** This issue affects:
+- `DataIngestLambdaDockerFunction` (data_ingestion)
+- `TextGenerationLambdaDockerFunction` (text_generation)  
+- Any other Lambda functions using container images
 
 ### Overview
 
