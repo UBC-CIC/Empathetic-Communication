@@ -13,52 +13,96 @@ export class VpcStack extends Stack {
   public readonly vpc: ec2.Vpc;
   public readonly vpcCidrString: string;
   public readonly privateSubnetsCidrStrings: string[];
+  public readonly frontPrivateSubnets: ec2.ISubnet[];
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const existingVpcId: string = ""; // CHANGE IF DEPLOYING WITH EXISTING VPC
+    const existingVpcId: string = "vpc-025783243153bb54c"; // CHANGE IF DEPLOYING WITH EXISTING VPC
 
     if (existingVpcId !== "") {
       const AWSControlTowerStackSet =
-        "StackSet-AWSControlTowerBP-VPC-ACCOUNT-FACTORY-V1-df80d055-f27d-4b9a-917f-f0db2da2ad91"; // CHANGE TO YOUR CONTROL TOWER STACK SET
-      const existingPublicSubnetID: string = ""; // CHANGE IF DEPLOYING WITH EXISTING PUBLIC SUBNET
+        "ProvisionVPC"; // CHANGE TO YOUR CONTROL TOWER STACK SET
+      
+      // **IMPORTANT**: Replace these with your actual subnet IDs and route table IDs
+      // You can find these in AWS Console > VPC > Subnets
+      // Backend (app/data) private subnets used by DB, API, Lambdas
+      const backendSubnetId: string = "subnet-0963658e86737910e"; // prd-phar-empath-ai-prd-back-ca-central-1a
+      const backendSubnetId2: string = "subnet-0ce0b8beeb6c4e9f8"; // prd-phar-empath-ai-prd-back-ca-central-1b
+      const backendSubnetId3: string = ""; // OPTIONAL: Backend subnet for ca-central-1d
+
+      // Front (LB/ECS/frontend) private subnets requested for frontend systems
+      const frontSubnetId: string = "subnet-097665934d5d0f7c2"; // prd-phar-empath-ai-prd-front-ca-central-1a
+      const frontSubnetId2: string = "subnet-03989c770b42052a2"; // prd-phar-empath-ai-prd-front-ca-central-1b
+      // optional third AZ if needed in future
+      const frontSubnetId3: string = "";
+      
+      // Route table IDs for the subnets above (find in AWS Console > VPC > Subnets > Route table tab)
+      const backendRouteTableId: string = "rtb-0584d7bd2c3ba7bf1"; // Route table ID for backendSubnetId
+      const backendRouteTableId2: string = "rtb-0584d7bd2c3ba7bf1"; // Route table ID for backendSubnetId2
+      const backendRouteTableId3: string = ""; // OPTIONAL: Route table ID for backendSubnetId3
 
       const vciPrefix = "VIRTUAL-CARE-INTERACTION-production";
 
-      this.vpcCidrString = "172.31.128.0/20";
+      this.vpcCidrString = "10.102.0.0/25";
+
+      // Determine if we should use specific subnets or CloudFormation imports
+      // When using specific subnets, we will only use the AZs for which subnets are provided
+      const providedSubnetIds = [backendSubnetId, backendSubnetId2, backendSubnetId3].filter((s) => !!s);
+      const providedRouteTableIds = [backendRouteTableId, backendRouteTableId2, backendRouteTableId3].filter((r) => !!r);
+      const useSpecificSubnets = providedSubnetIds.length > 0;
 
       // VPC for application
       this.vpc = ec2.Vpc.fromVpcAttributes(this, `${id}-Vpc`, {
         vpcId: existingVpcId,
-        availabilityZones: ["ca-central-1a", "ca-central-1b", "ca-central-1d"],
-        privateSubnetIds: [
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet1AID`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet2AID`),
-          Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3AID`),
-        ],
-        privateSubnetRouteTableIds: [
-          Fn.importValue(
-            `${AWSControlTowerStackSet}-PrivateSubnet1ARouteTable`
-          ),
-          Fn.importValue(
-            `${AWSControlTowerStackSet}-PrivateSubnet2ARouteTable`
-          ),
-          Fn.importValue(
-            `${AWSControlTowerStackSet}-PrivateSubnet3ARouteTable`
-          ),
-        ],
-        vpcCidrBlock: Fn.importValue(`${AWSControlTowerStackSet}-VPCCIDR`),
+        availabilityZones: useSpecificSubnets
+          ? // Infer AZs from known mapping of provided subnets; if only one, keep single AZ
+            providedSubnetIds.length === 1
+              ? ["ca-central-1a"]
+              : ["ca-central-1a", "ca-central-1b", "ca-central-1d"].slice(0, providedSubnetIds.length)
+          : ["ca-central-1a", "ca-central-1b", "ca-central-1d"],
+        privateSubnetIds: useSpecificSubnets
+          ? providedSubnetIds
+          : [
+              Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet1AID`),
+              Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet2AID`),
+              Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3AID`),
+            ],
+        // Don't specify publicSubnetIds - use private subnets only for the deployment
+        // This is the preferred architecture: all resources in private subnets with NAT
+        privateSubnetRouteTableIds: useSpecificSubnets
+          ? providedRouteTableIds.length > 0 ? providedRouteTableIds : undefined
+          : [
+              Fn.importValue(
+                `${AWSControlTowerStackSet}-PrivateSubnet1ARouteTable`
+              ),
+              Fn.importValue(
+                `${AWSControlTowerStackSet}-PrivateSubnet2ARouteTable`
+              ),
+              Fn.importValue(
+                `${AWSControlTowerStackSet}-PrivateSubnet3ARouteTable`
+              ),
+            ],
+        vpcCidrBlock: useSpecificSubnets ? this.vpcCidrString : Fn.importValue(`${AWSControlTowerStackSet}-VPCCIDR`),
       }) as ec2.Vpc;
 
       // Extract CIDR ranges from the private subnets
-      this.privateSubnetsCidrStrings = [
+      this.privateSubnetsCidrStrings = useSpecificSubnets ? [] : [
         Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet1ACIDR`),
         Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet2ACIDR`),
         Fn.importValue(`${AWSControlTowerStackSet}-PrivateSubnet3ACIDR`),
       ];
 
-      if (existingPublicSubnetID === "") {
+      // Expose front-end subnets for selective placement (e.g., ALB/NLB/ECS)
+      // These subnets remain separate from the VPC's default private subnets (backend)
+      const frontSubnetIds = [frontSubnetId, frontSubnetId2, frontSubnetId3].filter((s) => !!s);
+      // Using lightweight ISubnet references from IDs is sufficient for placement
+      this.frontPrivateSubnets = frontSubnetIds.map((sid, idx) =>
+        ec2.Subnet.fromSubnetId(this, `${id}-FrontSubnet-${idx + 1}`, sid)
+      );
+
+      // Skip public subnet creation if using specific subnets or if existingPublicSubnetID is set
+      if (false && !useSpecificSubnets) {
         console.log(
           "No public subnet exists. Creating new public subnet, IGW, and NAT GW."
         );
@@ -118,7 +162,9 @@ export class VpcStack extends Stack {
         });
       } else {
         console.log(
-          `Public subnet already exists. Skipping creation of public resources.`
+          useSpecificSubnets 
+            ? `Using specific subnets. Skipping creation of public resources.`
+            : `Public subnet already exists. Skipping creation of public resources.`
         );
       }
 
