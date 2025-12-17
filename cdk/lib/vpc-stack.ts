@@ -18,7 +18,7 @@ export class VpcStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const existingVpcId: string = "vpc-025783243153bb54c"; // CHANGE IF DEPLOYING WITH EXISTING VPC
+    const existingVpcId: string = "vpc-06dabb93e0ed16197"; // CHANGE IF DEPLOYING WITH EXISTING VPC
 
     if (existingVpcId !== "") {
       const AWSControlTowerStackSet =
@@ -27,24 +27,24 @@ export class VpcStack extends Stack {
       // **IMPORTANT**: Replace these with your actual subnet IDs and route table IDs
       // You can find these in AWS Console > VPC > Subnets
       // Backend (app/data) private subnets used by DB, API, Lambdas
-      const backendSubnetId: string = "subnet-0963658e86737910e"; // prd-phar-empath-ai-prd-back-ca-central-1a
-      const backendSubnetId2: string = "subnet-0ce0b8beeb6c4e9f8"; // prd-phar-empath-ai-prd-back-ca-central-1b
+      const backendSubnetId: string = "subnet-0369c2fa2e5d70695"; // prd-phar-empath-ai-prd-back-ca-central-1a
+      const backendSubnetId2: string = "subnet-07434d19387938307"; // prd-phar-empath-ai-prd-back-ca-central-1b
       const backendSubnetId3: string = ""; // OPTIONAL: Backend subnet for ca-central-1d
 
       // Front (LB/ECS/frontend) private subnets requested for frontend systems
-      const frontSubnetId: string = "subnet-097665934d5d0f7c2"; // prd-phar-empath-ai-prd-front-ca-central-1a
-      const frontSubnetId2: string = "subnet-03989c770b42052a2"; // prd-phar-empath-ai-prd-front-ca-central-1b
+      const frontSubnetId: string = "subnet-017bb497f28d38596"; // prd-phar-empath-ai-prd-front-ca-central-1a
+      const frontSubnetId2: string = "subnet-064739f90fa0d44c5"; // prd-phar-empath-ai-prd-front-ca-central-1b
       // optional third AZ if needed in future
       const frontSubnetId3: string = "";
       
       // Route table IDs for the subnets above (find in AWS Console > VPC > Subnets > Route table tab)
-      const backendRouteTableId: string = "rtb-0584d7bd2c3ba7bf1"; // Route table ID for backendSubnetId
-      const backendRouteTableId2: string = "rtb-0584d7bd2c3ba7bf1"; // Route table ID for backendSubnetId2
+      const backendRouteTableId: string = "rtb-0ac8f0231dd8db334"; // Route table ID for backendSubnetId
+      const backendRouteTableId2: string = "rtb-0ac8f0231dd8db334"; // Route table ID for backendSubnetId2
       const backendRouteTableId3: string = ""; // OPTIONAL: Route table ID for backendSubnetId3
 
       const vciPrefix = "VIRTUAL-CARE-INTERACTION-production";
 
-      this.vpcCidrString = "10.102.0.0/25";
+      this.vpcCidrString = "10.102.0.0/16";
 
       // Determine if we should use specific subnets or CloudFormation imports
       // When using specific subnets, we will only use the AZs for which subnets are provided

@@ -121,6 +121,10 @@ export class EcsSocketStack extends Stack {
       memoryLimitMiB: 2048,
       taskRole,
       executionRole: taskRole,
+      runtimePlatform: {
+        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+        cpuArchitecture: ecs.CpuArchitecture.ARM64,
+      },
     });
 
     // 4) Container listening on port 80
@@ -216,7 +220,7 @@ export class EcsSocketStack extends Stack {
       port: 80,
       targets: [service],
       healthCheck: {
-        path: "/",
+        path: "/health",
         protocol: elbv2.Protocol.HTTP,
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 10,
