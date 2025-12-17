@@ -742,6 +742,18 @@ exports.handler = async (event) => {
               break;
             }
 
+            // Debug: Check current user and permissions
+            const userCheck = await sqlConnectionTableCreator`SELECT current_user, current_database()`;
+            console.log('Current DB user:', userCheck);
+
+            const permCheck = await sqlConnectionTableCreator`
+              SELECT grantee, privilege_type 
+              FROM information_schema.table_privileges 
+              WHERE table_name = 'empathy_prompt_history' 
+              AND grantee = current_user;
+            `;
+            console.log('Permissions on empathy_prompt_history:', permCheck);
+
             // Insert new prompt into history
             await sqlConnectionTableCreator`
               INSERT INTO "empathy_prompt_history" (prompt_content)

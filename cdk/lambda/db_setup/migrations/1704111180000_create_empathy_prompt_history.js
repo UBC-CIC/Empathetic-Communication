@@ -6,6 +6,12 @@ exports.up = (pgm) => {
       "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Grant permissions to app users
+  pgm.sql(`
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "empathy_prompt_history" TO readwrite;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON "empathy_prompt_history" TO tablecreator;
+  `);
   
   // Insert default empathy prompt
   pgm.sql(`
