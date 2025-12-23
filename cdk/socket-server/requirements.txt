@@ -8,7 +8,7 @@ smithy-aws-core[eventstream,json]==0.1.0
 boto3==1.40.45
 botocore==1.40.45
 langchain-community==0.3.30
-langchain-core==0.3.78
+langchain-core==0.3.81
 langchain-aws==0.2.35
 pgvector==0.4.1
 requests==2.32.5
