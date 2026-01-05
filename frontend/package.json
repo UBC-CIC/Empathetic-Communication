@@ -36,7 +36,7 @@
     "crypto-js": "^4.2.0",
     "graphql-tag": "^2.12.6",
     "html2canvas": "^1.4.1",
-    "jspdf": "^3.0.2",
+    "jspdf": "^4.0.0",
     "ldrs": "^1.0.2",
     "material-react-table": "^2.13.1",
     "p5": "^2.0.3",
