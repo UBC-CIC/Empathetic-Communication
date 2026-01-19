@@ -8,6 +8,8 @@ import {
   ListItemText,
   Divider,
   Box,
+  Typography,
+  IconButton,
 } from "@mui/material";
 import ViewTimelineIcon from "@mui/icons-material/ViewTimeline";
 import EditIcon from "@mui/icons-material/Edit";
@@ -15,17 +17,50 @@ import PsychologyIcon from "@mui/icons-material/Psychology";
 import GroupIcon from "@mui/icons-material/Group";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { fetchAuthSession } from "aws-amplify/auth";
 
-const InstructorSidebar = ({ setSelectedComponent, activeExternal }) => {
+const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_group_id }) => {
   const navigate = useNavigate();
   const [drawerWidth, setDrawerWidth] = useState(220);
   const [activeRoute, setActiveRoute] = useState(
     activeExternal || "InstructorAnalytics"
   );
+  const [accessCode, setAccessCode] = useState("Loading...");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (activeExternal) setActiveRoute(activeExternal);
   }, [activeExternal]);
+
+  useEffect(() => {
+    const fetchCode = async () => {
+      if (!simulation_group_id) return;
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens.idToken;
+        const response = await fetch(
+          `${import.meta.env.VITE_API_ENDPOINT}instructor/get_access_code?simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: token,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        if (response.ok) {
+          const codeData = await response.json();
+          setAccessCode(codeData.group_access_code || "N/A");
+        } else {
+          setAccessCode("Error");
+        }
+      } catch (error) {
+        setAccessCode("Error");
+      }
+    };
+    fetchCode();
+  }, [simulation_group_id]);
 
   const handleMouseMove = (e) => {
     const newWidth = e.clientX;
@@ -53,6 +88,16 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal }) => {
     } else {
       setSelectedComponent(component);
       setActiveRoute(component);
+    }
+  };
+
+  const handleCopyAccessCode = async () => {
+    try {
+      await navigator.clipboard.writeText(accessCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
     }
   };
 
@@ -96,7 +141,7 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal }) => {
                 route: "PromptSettings",
               },
               {
-                text: "Edit Patients",
+                text: "Manage Patients",
                 icon: <EditIcon />,
                 route: "InstructorEditPatients",
               },
@@ -177,6 +222,56 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal }) => {
               );
             })}
           </List>
+          <Divider sx={{ mx: 1, my: 2, borderColor: "#f3f4f6" }} />
+          <Box sx={{ px: 2, pb: 2 }}>
+            <Typography
+              variant="caption"
+              sx={{ color: "#6b7280", fontWeight: 500, display: "block", mb: 1 }}
+            >
+              Access Code
+            </Typography>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                backgroundColor: "#f9fafb",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  fontFamily: "monospace",
+                  color: "#059669",
+                  fontWeight: 600,
+                  flex: 1,
+                  fontSize: "0.875rem",
+                }}
+              >
+                {accessCode}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={handleCopyAccessCode}
+                sx={{
+                  color: copied ? "#10b981" : "#6b7280",
+                  "&:hover": { backgroundColor: "#ecfdf5" },
+                }}
+              >
+                <ContentCopyIcon fontSize="small" />
+              </IconButton>
+            </Box>
+            {copied && (
+              <Typography
+                variant="caption"
+                sx={{ color: "#10b981", display: "block", mt: 0.5 }}
+              >
+                Copied!
+              </Typography>
+            )}
+          </Box>
         </Box>
       </Drawer>
       <div
