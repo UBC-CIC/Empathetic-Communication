@@ -291,7 +291,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
         <form noValidate autoComplete="off">
           <TextField
             fullWidth
-            label="Group Name *"
+            label="Group Name"
             value={simulationGroupName}
             onChange={(e) => setSimulationGroupName(e.target.value)}
             margin="normal"
@@ -301,7 +301,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           />
           <TextField
             fullWidth
-            label="Group Description *"
+            label="Group Description"
             value={groupDescription}
             onChange={(e) => setGroupDescription(e.target.value)}
             margin="normal"
