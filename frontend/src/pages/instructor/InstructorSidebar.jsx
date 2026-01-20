@@ -10,6 +10,7 @@ import {
   Box,
   Typography,
   IconButton,
+  Button,
 } from "@mui/material";
 import ViewTimelineIcon from "@mui/icons-material/ViewTimeline";
 import EditIcon from "@mui/icons-material/Edit";
@@ -98,6 +99,29 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("Failed to copy:", err);
+    }
+  };
+
+  const handleGenerateNewCode = async () => {
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens.idToken;
+      const response = await fetch(
+        `${import.meta.env.VITE_API_ENDPOINT}instructor/generate_access_code?simulation_group_id=${encodeURIComponent(simulation_group_id)}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (response.ok) {
+        const codeData = await response.json();
+        setAccessCode(codeData.access_code);
+      }
+    } catch (err) {
+      console.error("Failed to generate code:", err);
     }
   };
 
@@ -271,6 +295,21 @@ const InstructorSidebar = ({ setSelectedComponent, activeExternal, simulation_gr
                 Copied!
               </Typography>
             )}
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleGenerateNewCode}
+              sx={{
+                mt: 1,
+                backgroundColor: "#10b981",
+                textTransform: "none",
+                fontSize: "0.75rem",
+                borderRadius: "6px",
+                "&:hover": { backgroundColor: "#059669" },
+              }}
+            >
+              Generate New
+            </Button>
           </Box>
         </Box>
       </Drawer>
