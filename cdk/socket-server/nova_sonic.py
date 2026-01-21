@@ -38,7 +38,7 @@ class NovaSonic:
         # Credentials already set by server.js via STS
         pass
 
-    def __init__(self, model_id='amazon.nova-sonic-v1:0', region=None, socket_client=None, voice_id=None, session_id=None):
+    def __init__(self, model_id='amazon.nova-2-sonic-v1:0', region=None, socket_client=None, voice_id=None, session_id=None):
         self.user_id = os.getenv("USER_ID")
         self.model_id = model_id
         self.region = 'us-east-1'
