@@ -92,7 +92,7 @@ export class ApiServiceStack extends cdk.Stack {
      */
     const jwt = new lambda.LayerVersion(this, "aws-jwt-verify", {
       code: lambda.Code.fromAsset("./layers/aws-jwt-verify.zip"),
-      compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+      compatibleRuntimes: [lambda.Runtime.NODEJS_22_X],
       description: "Contains the aws-jwt-verify library for JS",
     });
 
@@ -102,7 +102,7 @@ export class ApiServiceStack extends cdk.Stack {
      */
     const postgres = new lambda.LayerVersion(this, "postgres", {
       code: lambda.Code.fromAsset("./layers/postgres.zip"),
-      compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+      compatibleRuntimes: [lambda.Runtime.NODEJS_22_X],
       description: "Contains the postgres library for JS",
     });
 
@@ -617,7 +617,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-studentFunction`,
       {
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         code: lambda.Code.fromAsset("lambda/lib"),
         handler: "studentFunction.handler",
         timeout: Duration.seconds(300),
@@ -649,7 +649,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-instructorFunction`,
       {
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         code: lambda.Code.fromAsset("lambda/lib"),
         handler: "instructorFunction.handler",
         timeout: Duration.seconds(300),
@@ -681,7 +681,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-adminFunction`,
       {
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         code: lambda.Code.fromAsset("lambda/adminFunction"),
         handler: "adminFunction.handler",
         timeout: Duration.seconds(300),
@@ -844,7 +844,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-addStudentOnSignUp`,
       {
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         code: lambda.Code.fromAsset("lambda/lib"),
         handler: "addStudentOnSignUp.handler",
         timeout: Duration.seconds(300),
@@ -861,7 +861,7 @@ export class ApiServiceStack extends cdk.Stack {
     );
 
     const adjustUserRoles = new lambda.Function(this, `${id}-adjustUserRoles`, {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       code: lambda.Code.fromAsset("lambda/lib"),
       handler: "adjustUserRoles.handler",
       timeout: Duration.seconds(300),
@@ -897,7 +897,7 @@ export class ApiServiceStack extends cdk.Stack {
     });
 
     const preSignupLambda = new lambda.Function(this, `preSignupLambda`, {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       code: lambda.Code.fromAsset("lambda/lib"),
       handler: "preSignup.handler",
       timeout: Duration.seconds(300),
@@ -922,7 +922,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-admin-authorization-api-gateway`,
       {
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         code: lambda.Code.fromAsset("lambda/adminAuthorizerFunction"),
         handler: "adminAuthorizerFunction.handler",
         timeout: Duration.seconds(300),
@@ -955,7 +955,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-student-authorization-api-gateway`,
       {
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         code: lambda.Code.fromAsset("lambda/studentAuthorizerFunction"),
         handler: "studentAuthorizerFunction.handler",
         timeout: Duration.seconds(300),
@@ -990,7 +990,7 @@ export class ApiServiceStack extends cdk.Stack {
       this,
       `${id}-instructor-authorization-api-gateway`,
       {
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         code: lambda.Code.fromAsset("lambda/instructorAuthorizerFunction"),
         handler: "instructorAuthorizerFunction.handler",
         timeout: Duration.seconds(300),

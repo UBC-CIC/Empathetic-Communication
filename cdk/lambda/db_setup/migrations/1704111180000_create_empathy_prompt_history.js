@@ -10,7 +10,7 @@ exports.up = (pgm) => {
   // Insert default empathy prompt
   pgm.sql(`
     INSERT INTO "empathy_prompt_history" (prompt_content) VALUES (
-      'You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacist's empathetic communication.
+      'You are an LLM-as-a-Judge for healthcare empathy evaluation. Your task is to assess, score, and provide detailed justifications for a pharmacist''s empathetic communication.
 
 **EVALUATION CONTEXT:**
 Patient Context: {patient_context}

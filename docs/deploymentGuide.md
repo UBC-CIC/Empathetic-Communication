@@ -39,7 +39,7 @@ This project uses [Poetry](https://python-poetry.org/) for Python dependency man
 ### Quick Setup
 ```bash
 # Install Poetry
-curl -sSL https://install.python-poetry.org | py  # Windows
+curl.exe -sSL https://install.python-poetry.org | py - # Windows
 curl -sSL https://install.python-poetry.org | python3 -  # macOS/Linux
 
 # Install export plugin

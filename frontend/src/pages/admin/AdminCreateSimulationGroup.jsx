@@ -99,6 +99,26 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
     fetchInstructors();
   }, []);
   const handleCreate = async () => {
+    // Validation
+    if (!simulationGroupName.trim()) {
+      toast.error("Group Name is required", {
+        position: "top-center",
+        autoClose: 2000,
+        theme: "colored",
+      });
+      setSubmitting(false);
+      return;
+    }
+    if (!groupDescription.trim()) {
+      toast.error("Group Description is required", {
+        position: "top-center",
+        autoClose: 2000,
+        theme: "colored",
+      });
+      setSubmitting(false);
+      return;
+    }
+
     const access_code = generateAccessCode();
     // Handle the create simulationGroup logic here
     try {
@@ -202,10 +222,12 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           });
         }
       } else {
-        console.error("Failed to create simulation group:", response.statusText);
-        toast.error("Simulation Group Creation Failed", {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || response.statusText || "Unknown error";
+        console.error("Failed to create simulation group:", errorMessage);
+        toast.error(`Creation Failed: ${errorMessage}`, {
           position: "top-center",
-          autoClose: 1000,
+          autoClose: 3000,
           hideProgressBar: false,
           closeOnClick: true,
           pauseOnHover: true,
@@ -216,9 +238,9 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
       }
     } catch (error) {
       console.error("Error creating simulation group:", error);
-      toast.error("Simulation Group Creation Failed", {
+      toast.error(`Creation Failed: ${error.message || "Network error"}`, {
         position: "top-center",
-        autoClose: 1000,
+        autoClose: 3000,
         hideProgressBar: false,
         closeOnClick: true,
         pauseOnHover: true,
@@ -269,12 +291,23 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
         <form noValidate autoComplete="off">
           <TextField
             fullWidth
-            label="Simulation Group"
+            label="Group Name"
             value={simulationGroupName}
             onChange={(e) => setSimulationGroupName(e.target.value)}
             margin="normal"
             backgroundColor="default"
             inputProps={{ maxLength: 50 }}
+            required
+          />
+          <TextField
+            fullWidth
+            label="Group Description"
+            value={groupDescription}
+            onChange={(e) => setGroupDescription(e.target.value)}
+            margin="normal"
+            backgroundColor="default"
+            inputProps={{ maxLength: 100 }}
+            required
           />
           <TextField
             fullWidth
@@ -286,15 +319,6 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
             rows={4}
             inputProps={{ maxLength: 1000 }}
             helperText={`${simulationGroupPrompt.length}/${CHARACTER_LIMIT}`}
-          />
-          <TextField
-            fullWidth
-            label="Group Description"
-            value={groupDescription}
-            onChange={(e) => setGroupDescription(e.target.value)}
-            margin="normal"
-            backgroundColor="default"
-            inputProps={{ maxLength: 100 }}
           />
           <FormControl fullWidth sx={{ marginBottom: 2, marginTop: 2 }}>
             <Autocomplete

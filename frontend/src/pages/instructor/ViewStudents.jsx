@@ -44,40 +44,7 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [loading, setLoading] = useState(false);
-  const [accessCode, setAccessCode] = useState("loading...");
-  const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
-
-  // Fetch access code and student data
-  useEffect(() => {
-    const fetchCode = async () => {
-      try {
-        const session = await fetchAuthSession();
-        const token = session.tokens.idToken;
-        const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
-          }instructor/get_access_code?simulation_group_id=${encodeURIComponent(
-            simulation_group_id
-          )}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: token,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (response.ok) {
-          const codeData = await response.json();
-          setAccessCode(codeData.group_access_code);
-        }
-      } catch (error) {
-        console.error("Error fetching access code:", error);
-      }
-    };
-    fetchCode();
-  }, [simulation_group_id]);
 
   useEffect(() => {
     const fetchStudents = async () => {
@@ -118,45 +85,6 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
     };
     fetchStudents();
   }, [simulation_group_id]);
-
-  const handleGenerateAccessCode = async () => {
-    try {
-      const session = await fetchAuthSession();
-      var token = session.tokens.idToken;
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
-        }instructor/generate_access_code?simulation_group_id=${encodeURIComponent(
-          simulation_group_id
-        )}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      if (response.ok) {
-        const codeData = await response.json();
-        setAccessCode(codeData.access_code);
-      } else {
-        console.error("Failed to fetch groups:", response.statusText);
-      }
-    } catch (error) {
-      console.error("Error fetching groups:", error);
-    }
-  };
-
-  const handleCopyAccessCode = async () => {
-    try {
-      await navigator.clipboard.writeText(accessCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch (e) {
-      console.error("Copy failed", e);
-    }
-  };
 
   // Handlers for pagination, searching, and navigation
   const handleSearchChange = (event) => {
@@ -319,67 +247,6 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
             </TableFooter>
           </Table>
         </TableContainer>
-      </Paper>
-      <Paper
-        sx={{
-          p: 3,
-          width: "100%",
-          maxWidth: "1000px",
-          borderRadius: "16px",
-          boxShadow:
-            "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.05)",
-          border: "1px solid #e5e7eb",
-          backgroundColor: "white",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 2,
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Typography
-            variant="subtitle1"
-            sx={{ fontWeight: 500, color: "#111827" }}
-          >
-            Access Code:{" "}
-            <span className="font-mono tracking-wide text-emerald-600">
-              {accessCode}
-            </span>
-          </Typography>
-          <IconButton
-            aria-label="Copy access code"
-            onClick={handleCopyAccessCode}
-            disabled={accessCode === "loading..."}
-            size="small"
-            sx={{
-              backgroundColor: "#ecfdf5",
-              border: "1px solid #d1fae5",
-              borderRadius: "10px",
-              "&:hover": { backgroundColor: "#d1fae5" },
-            }}
-          >
-            <ContentCopyIcon sx={{ fontSize: 16, color: "#059669" }} />
-          </IconButton>
-          {copied && (
-            <span className="text-emerald-600 text-sm font-medium">
-              Copied!
-            </span>
-          )}
-        </Box>
-        <Button
-          variant="contained"
-          onClick={handleGenerateAccessCode}
-          sx={{
-            backgroundColor: "#10b981",
-            borderRadius: "10px",
-            textTransform: "none",
-            fontWeight: 600,
-            "&:hover": { backgroundColor: "#059669" },
-          }}
-        >
-          Generate New Access Code
-        </Button>
       </Paper>
     </Box>
   );
