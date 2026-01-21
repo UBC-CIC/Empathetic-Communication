@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Text generation service for empathetic communication"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.12"
 boto3 = "*"
 botocore = "*"
 langchain = "*"

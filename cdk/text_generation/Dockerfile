@@ -1,4 +1,4 @@
-FROM public.ecr.aws/lambda/python:3.11
+FROM public.ecr.aws/lambda/python:3.12
 
 # Install system dependencies
 RUN yum -y install postgresql-devel gcc gcc-c++ libpq make
