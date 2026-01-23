@@ -1137,107 +1137,194 @@ Provide structured evaluation with detailed justifications for each score.
 if __name__ == "__main__":
     import sys
     import asyncio
+    import concurrent.futures
+    import traceback
     
     nova = None
+    stdin_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+    def read_stdin_line():
+        """Blocking stdin read in seperate thread"""
+        try:
+            return sys.stdin.readline();
+        except Exception as e:
+            print(f"STDIN READ ERROR: {e}", flush=True)
+            return None
     
-    async def handle_stdin():
-        """Handle commands from server.js via stdin"""
+
+    async def process_stdin_command(command):
+        """To process a single command from stdin"""
         global nova
+        cmd_type = command.get("type", "unknown")
+        print(f"STDIN COMMAND: {cmd_type}", flush=True)
+
+        try:
+            if cmd_type == "start_session":
+                if nova:
+                    await nova.end_session()
+                
+                nova = NovaSonic(
+                    session_id = command.get("session_id", "default"),
+                    voice_id = command.get("voice_id")
+                )
+
+                await nova.start_session()
+
+            elif cmd_type == "start_audio":
+                if nova:
+                    print("starting audio input...", flush=True)
+                    await nova.start_audio_input()
+                else:
+                    print("cannot start audio, nova NOT initialised", flush=True)
+            
+            elif cmd_type == "audio":
+                if nova:
+                    audio_data = base64.b64decode(command["data"])
+                    await nova.send_audio_chunk(audio_data)
+                else:
+                    print("cannot send audio, nova NOT initialised", flush=True)
+
+            elif cmd_type == "end_audio":
+                if nova:
+                    print("ending audio input...", flush=True)
+                    await nova.end_audio_input()
+                else:
+                    print("cannot end audio, nova NOT initialised", flush=True)
+
+            elif cmd_type == "evaluate_empathy":
+                if nova:
+                    print(f"processing empathy evaluation request!!", flush=True)
+                    asyncio.create_task(nova.handle_manual_empathy_evaluation(
+                        command["text"],
+                        command.get("session_id")
+                    ))
+
+            elif cmd_type == "text":
+                print(f"TEXT INPUT: {command.get('data', '')[:50]}...", flush=True)
+            
+            elif cmd_type == "end_session":
+                if nova:
+                    await nova.end_session()
+                    nova = None
         
+        except Exception as e:
+            print(f"COMMAND PROCESSING ERROR ({cmd_type}): {e}", flush=True)
+        
+    async def stdin_reader():
+        """Reads stdin commands without blocking the event loop"""
+        global nova
+        loop = asyncio.get_running_loop()
+
+        print("STDIN READER STARTED", flush=True)
+
         while True:
             try:
-                line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-                if not line:
+                # read a line in the thread pool with timeout capability
+                line = await loop.run_in_executor(stdin_executor, read_stdin_line)
+
+                if line is None:
+                    print("STDIN READER: received none. exiting", flush=True)
                     break
-                    
+        
                 line = line.strip()
                 if not line:
                     continue
-                    
+
                 try:
                     command = json.loads(line)
-                    print(f"💬 STDIN COMMAND: {command.get('type', 'unknown')}", flush=True)
-                    
-                    if command["type"] == "start_session":
-                        if nova:
-                            await nova.end_session()
-                        nova = NovaSonic(
-                            session_id=command.get("session_id", "default"),
-                            voice_id=command.get("voice_id"),
-                        )
-                        await nova.start_session()
-                        
-                    elif command["type"] == "start_audio" and nova:
-                        await nova.start_audio_input()
-                        
-                    elif command["type"] == "audio" and nova:
-                        audio_data = base64.b64decode(command["data"])
-                        await nova.send_audio_chunk(audio_data)
-                        
-                    elif command["type"] == "end_audio" and nova:
-                        await nova.end_audio_input()
-                        
-                    elif command["type"] == "evaluate_empathy" and nova:
-                        # Handle manual empathy evaluation from server.js
-                        print(f"🧠 STDIN: Processing empathy evaluation request", flush=True)
-                        asyncio.create_task(nova.handle_manual_empathy_evaluation(
-                            command["text"], 
-                            command.get("session_id")
-                        ))
-                        
-                    elif command["type"] == "text" and nova:
-                        # Handle text input (if needed)
-                        print(f"💬 TEXT INPUT: {command.get('data', '')[:50]}...", flush=True)
-                        
-                    elif command["type"] == "end_session" and nova:
-                        await nova.end_session()
-                        nova = None
-                        
+                    await process_stdin_command(command)
+
                 except json.JSONDecodeError as je:
-                    print(f"❌ JSON DECODE ERROR: {je} - Line: {line}", flush=True)
-                except Exception as cmd_error:
-                    print(f"❌ COMMAND ERROR: {cmd_error}", flush=True)
-                    logger.error(f"Command processing error: {cmd_error}")
-                    
-            except Exception as e:
-                print(f"❌ STDIN ERROR: {e}", flush=True)
-                logger.error(f"Stdin handling error: {e}")
+                    print(f"JSON DECODE ERROR: {je} - Line: {line[:100]}", flush=True)
+
+            except asyncio.CancelledError:
+                print("STDIN READER: cancelled", flush=True)
                 break
+            except Exception as e:
+                print(f"STDIN READER ERROR: {e}", flush=True)
+                await asyncio.sleep(0.1) # try to continue reading instead of breaking outright
+
+    async def monitor_response_task():
+        # to monitor the response processing task and restart if needed
+        global nova
+
+        while True:
+            await asyncio.sleep(5) # checking every 5 seconds
+
+            if nova and nova.is_active:
+                if nova.response is None or nova.response.done():
+                    if nova.response and nova.response.done():
+                        # checking for failure
+                        try:
+                            exc = nova.response.exception()
+                            if exc:
+                                print("RESPONSE TASK DIED WITH EXCEPTION: {exc}", flush=True)
+                        except asyncio.CancelledError:
+                            print("RESPONSE TASK WAS CANCELLED", flush=True)
+                        except asyncio.InvalidStateError:
+                            pass
+                print("RESTARTING RESPONSE TASK", flush=True)
+                nova.response = asyncio.create_task(nova._process_responses())
+    
     
     async def main():
-        """Main async function"""
+        """Main async function with proper concurrent task management"""
         global nova
         
         try:
             print(f"🚀 Nova Sonic Python process started", flush=True)
+            print(f"Python version: {sys.version}", flush=True)
             logger.info("Nova Sonic process initialized")
             
             # Auto-start session if environment variables are present
             session_id = os.getenv("SESSION_ID", "default")
             voice_id = os.getenv("VOICE_ID")
-            
-            if session_id != "default":
+
+            print(f"SESSION_ID: {session_id}", flush=True)
+            print(f"VOICE_ID: {voice_id}", flush=True)
+
+            if session_id and session_id != "default":
                 print(f"🚀 Auto-starting Nova Sonic session: {session_id}", flush=True)
                 nova = NovaSonic(session_id=session_id, voice_id=voice_id)
                 await nova.start_session()
+                print(f"NOVA SONIC SESSION STARTED SUCCESSFULLY!!!", flush=True)
+            else:
+                print(f"waiting for start session command...", flush=True)
             
-            # Handle stdin commands
-            await handle_stdin()
+            stdin_task = asyncio.create_task(stdin_reader())
+            monitor_task = asyncio.create_task(monitor_response_task())
+
+            # waiting for stdin_reader to complete when stdin closes
+            try:
+                await stdin_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                monitor_task.cancel()
+                try:
+                    await monitor_task
+                except asyncio.CancelledError:
+                    pass
             
         except KeyboardInterrupt:
             print(f"🚫 Nova Sonic process interrupted", flush=True)
             logger.info("Nova Sonic process interrupted by user")
         except Exception as e:
             print(f"❌ Nova Sonic process error: {e}", flush=True)
+            traceback.print_exc()
             logger.error(f"Nova Sonic process error: {e}")
         finally:
             if nova:
                 try:
                     await nova.end_session()
-                except:
-                    pass
-            print(f"🚫 Nova Sonic process ended", flush=True)
-            logger.info("Nova Sonic process ended")
+                except Exception as e:
+                    print(f"ERROR ENDING SESSION: {e}", flush=True)
+            
+        # clean up executor
+        stdin_executor.shutdown(wait=False)
+        print(f"NOVA SONIC PROCESS ENDED", flush=True)
+        logger.info("Nova Sonic process ended")
+            
     
     # Run the main async function
     asyncio.run(main())

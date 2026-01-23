@@ -94,13 +94,12 @@ export async function startSpokenLLM(
   });
 }
 
-export async function stopSpokenLLM() {
+export async function stopSpokenLLM(waitForResponse = true) {
   console.log("🛑 Stopping Nova Sonic voice stream...");
 
   const socket = await getSocket();
-  socket.emit("end-audio");
 
-  // Then clean up audio resources
+  // Stop sending audio, but keep listening for response
   if (processor) {
     try {
       processor.disconnect();
@@ -121,6 +120,74 @@ export async function stopSpokenLLM() {
     input = null;
   }
 
+  // sending end-audio to trigger AI response
+  console.log("Sending end-audio to trigger AI response...");
+  socket.emit("end-audio");
+
+  if (waitForResponse) {
+    console.log("WAITING FOR AI RESPONSE...");
+
+    // waiting for the response or timeout after 10 seconds
+    await new Promise((resolve) => {
+      let resolved = false;
+      let receivedResponse = false;  // to track if ANY response received
+      let responseTimer = null;
+
+      const cleanup = () => {
+        if (!resolved) {
+          resolved = true;
+          socket.off("audio-chunk", onAudioChunk);
+          socket.off("text-message", onTextMessage);
+          if (responseTimer) clearTimeout(responseTimer);
+          resolve();
+        }
+      };
+
+      const onAudioChunk = (data) => {
+        console.log("received audio response");
+        receivedResponse = true;
+
+        // once we get a response, wait for playback to finish
+        if (responseTimer) {
+          clearTimeout(responseTimer);
+        }
+        responseTimer = setTimeout(() => {
+          if (!isPlaying && audioBuffer.length === 0) {
+            console.log("Audio playback completed");
+            cleanup();
+          }
+        }, 7000);
+      };
+
+      const onTextMessage = (data) => {
+        console.log("received text response:", data.text?.substring(0, 50));
+        receivedResponse = true;
+
+        // text response received, wait a bit then cleanup
+        if (responseTimer) {
+          clearTimeout(responseTimer);
+        }
+        responseTimer = setTimeout(() => {
+          console.log("Text response processed");
+          cleanup();
+        }, 1000);
+      };
+
+      // listen for responses
+      socket.on("audio-chunk", onAudioChunk);
+      socket.on("text-message", onTextMessage);
+
+      // timeout after 10 seconds
+      setTimeout(() => {
+        if (!receivedResponse) {
+          console.warn("⚠️ No response received within 10 seconds");
+        }
+        cleanup();
+      }, 10000);
+    });
+  }
+
+  // now it's safe to clean up the rest
   if (globalStream) {
     try {
       globalStream.getTracks().forEach((track) => {
@@ -171,7 +238,7 @@ export function stopAudioPlayback() {
 
     // Close the last audio context used for playback
     if (lastAudioCtx && typeof lastAudioCtx.close === "function") {
-      lastAudioCtx.close().catch(() => {});
+      lastAudioCtx.close().catch(() => { });
       lastAudioCtx = null;
     }
 
