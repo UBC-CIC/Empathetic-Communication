@@ -65,6 +65,8 @@ class NovaSonic:
         self._bedrock_client = None
         self._chat_context = None
         self._current_user_input = ""
+        # Adding evaluation sequence tracking to prevent stale overwrites
+        self._empathy_eval_sequence = 0
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
@@ -335,6 +337,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             print(f"🔍 DEBUG: Audio ended, user input: {self._current_user_input[:50]}...", flush=True)
             logger.info(f"🎤 AUDIO END - User input: {self._current_user_input[:30]}...")
             
+            # incrementing sequence number
+            self._empathy_eval_sequence += 1
+            current_sequence = self._empathy_eval_sequence
+
+            # capturing the user input BEFORE creating async task to prevent race condition
+            captured_user_input = self._current_user_input
+            print(f"EVALUATION SEQUENCE: {current_sequence}: Starting for user input: {captured_user_input[:50]}...", flush=True)
             # Save user message to DB (CRITICAL for empathy coach review)
             print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
             asyncio.create_task(self._save_user_message_async(self._current_user_input))
@@ -342,10 +351,6 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             # CRITICAL: Direct empathy evaluation for voice input
             print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
             patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            
-            # CRITICAL FIX: Capture the user input BEFORE creating async task to prevent race condition
-            captured_user_input = self._current_user_input
-            print(f"🔍 CRITICAL FIX: Captured user input: '{captured_user_input}'", flush=True)
             
             # Create empathy evaluation task with proper error handling
             async def safe_empathy_eval():
@@ -357,10 +362,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     else:
                         print(f"🧠 VOICE EMPATHY: Evaluation returned None", flush=True)
                 except Exception as e:
-                    print(f"🧠 VOICE EMPATHY: Evaluation failed with error: {e}", flush=True)
+                    print(f"🧠 VOICE EMPATHY: Evaluation Sequence {current_sequence} failed with error: {e}", flush=True)
                     logger.error(f"Voice empathy evaluation error: {e}")
             
             asyncio.create_task(safe_empathy_eval())
+
+            if self.llm_completion:
+                asyncio.create_task(self._evaluate_diagnosis_async(captured_user_input))
             
             self._current_user_input = ""  # Reset for next input
         else:
@@ -497,20 +505,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     self._current_user_input += text
                     print(f"🔍 DEBUG: Accumulated user input now: {len(self._current_user_input)} chars", flush=True)
                 
-                # CRITICAL FIX: Save USER message to database immediately
-                if text.strip():
-                    print(f"💾 SAVING USER MESSAGE TO DB: {text[:50]}...", flush=True)
-                    asyncio.create_task(self._save_user_message_async(text))
-                    
-                    logger.info(f"🧠 USER MESSAGE - Checking empathy: {text[:30]}...")
-                    
-                    # Use the direct empathy evaluation method for voice inputs
-                    patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-                    asyncio.create_task(self._evaluate_empathy(text, patient_context))
-                    
-                    # Check for diagnosis if LLM completion is enabled
-                    if self.llm_completion:
-                        asyncio.create_task(self._evaluate_diagnosis_async(text))
+                # no evaluation/DB save here, evaluation will be done ONCE in end_audio_input() with complete text
 
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
 
@@ -718,8 +713,14 @@ Provide structured evaluation with detailed justifications for each score.
             print(f"❌ ASYNC SAVE FAILED: {e}", flush=True)
             logger.error(f"Failed to save user audio message: {e}")
     
-    async def _evaluate_empathy(self, student_response, patient_context):
+    async def _evaluate_empathy(self, student_response, patient_context, sequence=None):
         """LLM-as-a-Judge empathy evaluation using admin-controlled prompt system"""
+
+        # first, checking if this evaluation is still relevant
+        if sequence is not None and sequence < self._empathy_eval_sequence:
+            print(f"EVALUATION # {sequence} IS NO LONGER RELEVANT, newer evaluation #{self._empathy_eval_sequence} in progress, SKIPPING...", flush=True)
+            return None
+        
         print(f"🧠 VOICE: _evaluate_empathy CALLED with response: {student_response[:50]}...", flush=True)
         logger.info(f"🧠 VOICE: Starting empathy evaluation for: {student_response[:30]}...")
         
@@ -856,6 +857,10 @@ Provide structured evaluation with detailed justifications for each score.
                 # Save to database
                 self._save_message_to_db(self.session_id, True, student_response, empathy_result)
                 
+                # before sending feedback, check if still latest
+                if sequence is not None and sequence < self._empathy_eval_sequence:
+                    print(f"EVALUATION # {sequence}: RESULTS DISCARDED - newer evaluation exists", flush=True)
+                    return empathy_result # return but don't send to frontend
                 # Send empathy feedback
                 empathy_feedback = self._build_empathy_feedback(empathy_result)
                 if empathy_feedback:
