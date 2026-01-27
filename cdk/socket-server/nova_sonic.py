@@ -415,32 +415,36 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
 
         try:
             while self.is_active:
-                output = await self.stream.await_output()
-                result = await output[1].receive()
+                try:
+                    output = await self.stream.await_output()
+                    result = await output[1].receive()
 
-                if not (result.value and result.value.bytes_):
+                    if not (result.value and result.value.bytes_):
+                        continue
+
+                    chunk = result.value.bytes_.decode("utf-8")
+                    buffer += chunk
+
+                    idx = 0
+                    while True:
+                        try:
+                            obj, offset = decoder.raw_decode(buffer[idx:])
+                        except json.JSONDecodeError:
+                            break
+                        idx += offset
+                        await self._handle_event(obj)
+
+                    buffer = buffer[idx:]
+                except Exception as inner_e:
+                    print(f"🔥 Error in _process_responses() [inner loop]: {inner_e}", flush=True)
+                    await asyncio.sleep(0.1)
                     continue
-
-                # 1) Decode the raw bytes
-                chunk = result.value.bytes_.decode("utf-8")
-                buffer += chunk
-
-                # 2) Try to peel off as many complete JSON objects as possible
-                idx = 0
-                while True:
-                    try:
-                        obj, offset = decoder.raw_decode(buffer[idx:])
-                    except json.JSONDecodeError:
-                        break
-                    idx += offset
-                    # 3) Hand off each parsed object
-                    await self._handle_event(obj)
-
-                # 4) Keep only the unparsed tail
-                buffer = buffer[idx:]
 
         except Exception as e:
             print(f"🔥 Error in _process_responses(): {e}", flush=True)
+            self.is_active = False # signal for monitor task
+
+        
 
     async def _handle_event(self, json_data):
         """Dispatch one parsed JSON event to your existing logic."""
@@ -1263,8 +1267,8 @@ if __name__ == "__main__":
                             print("RESPONSE TASK WAS CANCELLED", flush=True)
                         except asyncio.InvalidStateError:
                             pass
-                print("RESTARTING RESPONSE TASK", flush=True)
-                nova.response = asyncio.create_task(nova._process_responses())
+                    print("RESTARTING RESPONSE TASK", flush=True)
+                    nova.response = asyncio.create_task(nova._process_responses())
     
     
     async def main():
