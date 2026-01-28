@@ -568,33 +568,9 @@ def get_response(
     """
     logger.info(f"🔍 GET_RESPONSE CALLED - Stream: {stream}, Query: '{query[:50]}...'")
     
-    empathy_evaluation = None
+    # we want to save student message without blocking (empathy will be evaluated async during streaming)
+    save_message_to_db(session_id, True, query, None)
     empathy_feedback = ""
-    is_greeting = 'Greet me' in query or 'Hello.' == query.strip()
-    should_evaluate_non_streaming = len(query.strip()) > 0 and not is_greeting
-    
-    if should_evaluate_non_streaming:
-        try:
-            logger.info("🧠 NON-STREAMING: Starting empathy evaluation")
-            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
-            deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
-            nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
-                "model_id": "amazon.nova-pro-v1:0"
-            }
-            empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
-            save_message_to_db(session_id, True, query, empathy_evaluation)
-        except Exception as e:
-            logger.error(f"Empathy evaluation failed: {e}")
-            save_message_to_db(session_id, True, query, None)
-    else:
-        logger.info(f"🔍 NON-STREAMING: Skipping empathy evaluation - Query: '{query}'")
-        save_message_to_db(session_id, True, query, None)
-    
-    if empathy_evaluation:
-        empathy_feedback = build_empathy_feedback(empathy_evaluation)
-    else:
-        empathy_feedback = ""
     
     completion_string = """
                 Once I, the pharmacist, have give you a diagnosis, politely leave the conversation and wish me goodbye.
@@ -690,8 +666,6 @@ def get_response(
         return {"llm_output": response, "session_name": session_name, "llm_verdict": False}
     
     result = get_llm_output(response, llm_completion, empathy_feedback)
-    if empathy_evaluation:
-        result["empathy_evaluation"] = empathy_evaluation
     
     # Generate proper session name
     from datetime import datetime
@@ -745,8 +719,8 @@ def generate_streaming_response(
             
             if evaluation:
                 logger.info("🧠 Publishing empathy data to AppSync")
-                empathy_feedback = build_empathy_feedback(evaluation)
-                publish_to_appsync(session_id, {"type": "empathy", "content": empathy_feedback})
+                # empathy_feedback = build_empathy_feedback(evaluation)
+                publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(evaluation)})
             else:
                 logger.warning("🧠 No empathy evaluation to publish")
         except Exception as e:
