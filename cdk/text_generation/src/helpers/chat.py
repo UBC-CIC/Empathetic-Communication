@@ -606,16 +606,24 @@ def get_response(
                 Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
-    system_prompt = (
+    if not system_prompt or len(system_prompt.strip()) < 50:
+        system_prompt = get_default_system_prompt(patient_name)
+        logger.info("USING DEFAULT SYSTEM PROMPT, passed prompt was empty")
+
+    final_system_prompt = (
         f"""
         <|begin_of_text|>
         <|start_header_id|>patient<|end_header_id|>
-        Please pay close attention to this: {system_prompt} 
-        Here are some additional details about your personality, symptoms, or overall condition: {patient_prompt}
+        
+        CRITICAL: You are {patient_name}, a PATIENT seeking help from a pharmacist.
+        NEVER act as a doctor or pharmacist. ALWAYS respond as a patient.
+
+        {system_prompt}
+
+        Additional details about your personality, symptoms or condition:
+        {patient_prompt if patient_prompt else "No additional details provided."}
+
         {completion_string}
-        You are a patient named {patient_name}.
-         
-        {get_system_prompt(patient_name=patient_name)}
 
         <|eot_id|>
         <|start_header_id|>documents<|end_header_id|>
@@ -624,11 +632,15 @@ def get_response(
         """
     )
 
-    print(f"🔍 System prompt for {patient_name}:\\\\n{system_prompt}")
-    logger.info(f"🔍 System prompt, {patient_name}:\\\\n{system_prompt}")
+    logger.info("====================================")
+    logger.info("FINAL SYSTEM PROMPT BEING USED:")
+    logger.info(f"    system prompt length: {len(final_system_prompt)} chars")
+    logger.info(f"    contains PATIENT: {'patient' in final_system_prompt.lower()}")
+    logger.info(f"    first 400 chars\n{final_system_prompt[:400]}")
+    logger.info("====================================")
     
     qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
+        ("system", final_system_prompt),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
     ])

@@ -137,46 +137,72 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
         """Cached system prompt retrieval with medical document integration using centralized connection manager"""
         if self._cached_system_prompt:
             return self._cached_system_prompt
-            
-        try:
-            logger.info("🔗 VOICE_SYSTEM_PROMPT: Using centralized voice connection manager")
-            
-            # Log pool status for monitoring
-            pool_status = voice_db_manager.get_pool_status()
-            logger.info(f"🔗 VOICE_POOL_STATUS: {pool_status}")
-            
-            conn = get_pg_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                'SELECT prompt_content FROM system_prompt_history ORDER BY created_at DESC LIMIT 1'
-            )
-            result = cursor.fetchone()
-            cursor.close()
-            return_pg_connection(conn)
-            
-            base_prompt = ""
-            if result and result[0]:
-                base_prompt = result[0]
-                logger.info("🔗 VOICE_SYSTEM_PROMPT_SUCCESS: Retrieved from database")
-            else:
-                base_prompt = self.get_default_system_prompt(patient_name or self.patient_name)
-                logger.info("🔗 VOICE_SYSTEM_PROMPT_FALLBACK: Using default prompt")
-            
-            # Add medical document context if available
-            medical_context = self._get_medical_context()
-            if medical_context:
-                base_prompt += f"\n\nMEDICAL CONTEXT:\n{medical_context}"
-                logger.info("📋 VOICE: Added medical document context to system prompt")
-            
-            self._cached_system_prompt = base_prompt
-            return self._cached_system_prompt
-        except Exception as e:
-            logger.error(f"Error retrieving system prompt: {e}")
-            
-        # Fallback to default
-        self._cached_system_prompt = self.get_default_system_prompt(patient_name or self.patient_name)
-        logger.info("🔗 VOICE_SYSTEM_PROMPT_FALLBACK: Using default prompt")
+
+        # first try to use patient_prompt from environment
+        env_patient_prompt = self.patient_prompt
+        env_patient_name = self.patient_name
+        print(f"PROMPT DEBUG: patient name = '{env_patient_name}'", flush=True)
+        print(f"PROMPT DEBUG: patient prompt length = {len(env_patient_prompt) if env_patient_prompt else 'N/A'}", flush=True)
+
+        # if we have a patient prompt, use it
+        if env_patient_prompt and env_patient_prompt.strip():
+            print(f"USING PATIENT PROMPT FROM ENVIRONMENT", flush=True)
+            base_prompt = env_patient_prompt
+
+            # inject patient name if provided
+            if env_patient_name and "{patient_name}" in base_prompt:
+                base_prompt = base_prompt.replace("{patient_name}", env_patient_name)
+            elif env_patient_name:
+                base_prompt = f"You are {env_patient_name}." + base_prompt
+        
+        else:
+            # ok now try database
+            try:
+                logger.info("VOICE_SYSTEM_PROMPT: checking DATABASE")
+                conn = get_pg_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT prompt_content FROM system_prompt_history ORDER BY created_at DESC LIMIT 1'
+                )
+                result = cursor.fetchone()
+                cursor.close()
+                return_pg_connection(conn)
+
+                if result and result[0]:
+                    base_prompt = result[0]
+                    print(f"USING PROMPT FROM DATABASE", flush=True)
+                    logger.info("VOICE SYSTEM PROMPT SUCCESS, Retrieved from database")
+                else:
+                    # default prompt
+                    base_prompt = self.get_default_system_prompt(env_patient_name)
+                    print("USING DEFAULT PROMPT", flush=True)
+                    logger.info("VOICE SYSTEM PROMPT FALLBACK - using default prompt")
+
+            except Exception as e:
+                logger.error(f"Error retrieving system prompt: {e}")
+                base_prompt = self.get_default_system_prompt(env_patient_name)
+                print(f"USING DEFAULT PROMPT - DATABASE ERROR", flush=True)
+
+        # add medical document context if available
+        medical_context = self._get_medical_context()
+        if medical_context:
+            base_prompt += f"\n\nMEDICAL CONTEXT:\n{medical_context}"
+            print(f"VOICE: added medical document context", flush=True)
+
+        # add extra system prompt if provided
+        if self.extra_system_prompt:
+            base_prompt += f"\n\n{self.extra_system_prompt}"
+            print(f"VOICE: added extra system prompt", flush=True)
+
+        print(f"====================================", flush=True) # just for readability
+        print(f"FINAL PROMPT PREVIEW:", flush=True)
+        print(f"{base_prompt[:300]}...", flush=True)
+        print(f"====================================", flush=True)
+
+        self._cached_system_prompt = base_prompt
         return self._cached_system_prompt
+
+
 
     async def start_session(self):
         """Start a new Nova Sonic session"""
