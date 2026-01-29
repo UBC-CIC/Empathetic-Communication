@@ -337,7 +337,7 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
                   </Typography>
                   <Typography
                     variant="body2"
-                    sx={{ whiteSpace: "pre-wrap", mt: 1 }}
+                    sx={{ whiteSpace: "pre-wrap", mt: 1, textAlign: "left" }}
                   >
                     {previousPrompts[activeStep]?.previous_prompt}
                   </Typography>

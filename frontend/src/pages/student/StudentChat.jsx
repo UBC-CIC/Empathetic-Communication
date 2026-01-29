@@ -1236,7 +1236,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         sortedData.forEach((message) => {
           // Filter out initial messages
           if (message.message_content.trim() === "introduce yourself briefly" ||
-            message.message_content.includes("Greet me and then ask me a question related to the patient:")) {
+            message.message_content.includes("Begin the conversation as the patient:")) {
             return;
           }
 
