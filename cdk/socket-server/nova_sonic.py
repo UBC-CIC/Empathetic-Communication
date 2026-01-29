@@ -520,7 +520,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
 
             elif self.role == "USER":
                 print(f"User: {text}", flush=True)
-                print(json.dumps({"type": "text", "text": text}), flush=True)
+                # print(json.dumps({"type": "text", "text": text}), flush=True) <- we don't want to send this concatenated text to the frontend
                 
                 # CRITICAL FIX: Accumulate user input for empathy evaluation
                 if not hasattr(self, '_current_user_input'):
