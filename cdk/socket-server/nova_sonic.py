@@ -370,9 +370,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             # capturing the user input BEFORE creating async task to prevent race condition
             captured_user_input = self._current_user_input
             print(f"EVALUATION SEQUENCE: {current_sequence}: Starting for user input: {captured_user_input[:50]}...", flush=True)
+
+            # adding prefix here for frontend filtering
+            prefixed_user_input = f"[VOICE_TRANSCRIPT]{captured_user_input}"
+            
             # Save user message to DB (CRITICAL for empathy coach review)
             print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
-            asyncio.create_task(self._save_user_message_async(self._current_user_input))
+            asyncio.create_task(self._save_user_message_async(prefixed_user_input))
             
             # CRITICAL: Direct empathy evaluation for voice input
             print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
