@@ -264,14 +264,24 @@ exports.handler = async (event) => {
           event.queryStringParameters.simulation_group_id &&
           event.queryStringParameters.access
         ) {
-          const { simulation_group_id, access, empathy_enabled, admin_voice_enabled, instructor_voice_enabled } = event.queryStringParameters;
+          const { simulation_group_id, group_name, access, empathy_enabled, admin_voice_enabled, instructor_voice_enabled } = event.queryStringParameters;
           const accessBool = access.toLowerCase() === "true";
           const empathyBool = empathy_enabled ? empathy_enabled.toLowerCase() === "true" : true;
           const adminVoiceBool = admin_voice_enabled ? admin_voice_enabled.toLowerCase() === "true" : true;
           const instructorVoiceBool = instructor_voice_enabled ? instructor_voice_enabled.toLowerCase() === "true" : true;
 
-          // SQL query to update group access, empathy_enabled, and voice settings
-          await sqlConnectionTableCreator`
+          if (group_name) { // update WITH group name
+            await sqlConnectionTableCreator`
+              UPDATE "simulation_groups"
+              SET group_name = ${group_name},
+                  group_student_access = ${accessBool},
+                  empathy_enabled = ${empathyBool},
+                  admin_voice_enabled = ${adminVoiceBool},
+                  instructor_voice_enabled = ${instructorVoiceBool}
+              WHERE simulation_group_id = ${simulation_group_id};
+            `;
+          } else { // SQL query to update group access, empathy_enabled, and voice settings
+            await sqlConnectionTableCreator`
                     UPDATE "simulation_groups"
                     SET group_student_access = ${accessBool}, 
                         empathy_enabled = ${empathyBool},
@@ -279,6 +289,9 @@ exports.handler = async (event) => {
                         instructor_voice_enabled = ${instructorVoiceBool}
                     WHERE simulation_group_id = ${simulation_group_id};
                   `;
+
+          }
+
 
           response.body = JSON.stringify({
             message: "Group settings updated successfully.",
@@ -586,7 +599,7 @@ exports.handler = async (event) => {
           // Prefer query param history_id; fallback to body with prompt_content for backward compatibility
           const historyId =
             event.queryStringParameters &&
-            event.queryStringParameters.history_id
+              event.queryStringParameters.history_id
               ? event.queryStringParameters.history_id
               : null;
 
@@ -765,7 +778,7 @@ exports.handler = async (event) => {
         try {
           const historyId =
             event.queryStringParameters &&
-            event.queryStringParameters.history_id
+              event.queryStringParameters.history_id
               ? event.queryStringParameters.history_id
               : null;
 

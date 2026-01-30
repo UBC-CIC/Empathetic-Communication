@@ -127,7 +127,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
   // Real-time empathy chunks from AppSync stream
   const [realtimeEmpathy, setRealtimeEmpathy] = useState([]);
-  
+
   // Handle empathy data from voice conversations
   const handleVoiceEmpathyData = (empathyData) => {
     console.log('🧠 Received empathy data from voice:', empathyData);
@@ -197,16 +197,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     if (newMessage !== null) {
       if (currentSessionId === session?.session_id) {
         // Enhanced duplicate detection
-        const contentKey = `${
-          newMessage.student_sent ? "student" : "ai"
-        }-${newMessage.message_content.trim()}`;
+        const contentKey = `${newMessage.student_sent ? "student" : "ai"
+          }-${newMessage.message_content.trim()}`;
 
         // Check if this message already exists in the messages array to prevent duplication
         const messageExists = messages.some(
           (msg) =>
             msg.message_id === newMessage.message_id ||
-            `${
-              msg.student_sent ? "student" : "ai"
+            `${msg.student_sent ? "student" : "ai"
             }-${msg.message_content.trim()}` === contentKey
         );
 
@@ -217,8 +215,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             const isDuplicate = prevItems.some(
               (msg) =>
                 msg.message_id === newMessage.message_id ||
-                `${
-                  msg.student_sent ? "student" : "ai"
+                `${msg.student_sent ? "student" : "ai"
                 }-${msg.message_content.trim()}` === contentKey
             );
 
@@ -250,8 +247,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         const { email } = await fetchUserAttributes();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }student/patient?email=${encodeURIComponent(
             email
           )}&simulation_group_id=${encodeURIComponent(
@@ -306,8 +302,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }student/patient_voice_id?patient_id=${encodeURIComponent(
           patient.patient_id
         )}`,
@@ -345,6 +340,20 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         playAudio(data.data);
       };
 
+      const handleTextMessage = (data) => {
+        // ADD MESSAGE TO CHAT UI
+        console.log("Voice text message received:", data.text);
+        if (data.text && data.text.trim()) {
+          const newMsg = {
+            message_id: `voice_${Date.now()}`,
+            student_sent: false,
+            message_content: data.text,
+            time_sent: new Date().toISOString()
+          };
+          setMessages(prev => [...prev, newMsg]);
+        }
+      };
+
       const handleEmpathyFeedback = (data) => {
         if (data.content) {
           setRealtimeEmpathy((prev) => [...prev, { content: data.content, timestamp: Date.now() }]);
@@ -357,11 +366,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       // Clean up existing listeners
       socket.off("audio-chunk");
+      socket.off("text-message");
       socket.off("empathy-feedback");
       socket.off("diagnosis-complete");
 
       // Add optimized listeners
       socket.on("audio-chunk", handleAudio);
+      socket.on("text-message", handleTextMessage);
       socket.on("empathy-feedback", handleEmpathyFeedback);
       socket.on("diagnosis-complete", handleDiagnosisComplete);
     };
@@ -417,8 +428,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const token = session.tokens.idToken;
 
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }student/get_all_files?simulation_group_id=${encodeURIComponent(
           group.simulation_group_id
         )}&patient_id=${encodeURIComponent(
@@ -459,8 +469,8 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           typeof profilePicture === "string"
             ? profilePicture
             : profilePicture?.url ||
-              profilePicture?.profile_picture_url ||
-              null;
+            profilePicture?.profile_picture_url ||
+            null;
         setProfilePicture(profileUrl || null);
         setPatientInfoFiles(infoFiles);
         setAnswerKeyFiles(answerKeyFiles);
@@ -489,8 +499,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const token = authSession.tokens.idToken;
 
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }student/empathy_summary?session_id=${encodeURIComponent(
           session.session_id
         )}&email=${encodeURIComponent(
@@ -535,13 +544,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   useEffect(() => {
     const fetchEmpathyEnabled = async () => {
       if (!group?.simulation_group_id) return;
-      
+
       try {
         const session = await fetchAuthSession();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }student/empathy_enabled?simulation_group_id=${encodeURIComponent(
             group.simulation_group_id
           )}`,
@@ -553,7 +561,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
             },
           }
         );
-        
+
         if (response.ok) {
           const data = await response.json();
           setEmpathyEnabled(data.empathy_enabled);
@@ -564,7 +572,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         console.error("Error fetching empathy enabled status:", error);
       }
     };
-    
+
     fetchEmpathyEnabled();
     fetchVoiceEnabled();
   }, [group]);
@@ -572,13 +580,12 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   // Fetch voice enabled status
   const fetchVoiceEnabled = async () => {
     if (!group?.simulation_group_id) return;
-    
+
     try {
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }student/voice_enabled?simulation_group_id=${encodeURIComponent(
           group.simulation_group_id
         )}`,
@@ -590,7 +597,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           },
         }
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         setVoiceEnabled(data.voice_enabled);
@@ -623,8 +630,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const token = authSession.tokens.idToken;
       try {
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }student/create_ai_message?session_id=${encodeURIComponent(
             sessionId
           )}&email=${encodeURIComponent(
@@ -696,10 +702,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       prev.map((m) =>
         m.message_id === STREAMING_TEMP_ID
           ? {
-              ...m,
-              message_content:
-                (m.message_content === " " ? "" : m.message_content) + text,
-            }
+            ...m,
+            message_content:
+              (m.message_content === " " ? "" : m.message_content) + text,
+          }
           : m
       )
     );
@@ -710,11 +716,11 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       prev.map((m) =>
         m.message_id === STREAMING_TEMP_ID
           ? {
-              ...m,
-              message_id: `ai_${Date.now()}`,
-              message_content: finalText,
-              _streaming: false, // stop typing cursor
-            }
+            ...m,
+            message_id: `ai_${Date.now()}`,
+            message_content: finalText,
+            _streaming: false, // stop typing cursor
+          }
           : m
       )
     );
@@ -848,15 +854,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       })
       .then(({ email }) => {
         userEmail = email;
-        const messageUrl = `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/create_message?session_id=${encodeURIComponent(
-          newSession.session_id
-        )}&email=${encodeURIComponent(
-          userEmail
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(patient.patient_id)}`;
+        const messageUrl = `${import.meta.env.VITE_API_ENDPOINT
+          }student/create_message?session_id=${encodeURIComponent(
+            newSession.session_id
+          )}&email=${encodeURIComponent(
+            userEmail
+          )}&simulation_group_id=${encodeURIComponent(
+            group.simulation_group_id
+          )}&patient_id=${encodeURIComponent(patient.patient_id)}`;
 
         return fetch(messageUrl, {
           method: "POST",
@@ -882,17 +887,16 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
         const message = messageData[0].message_content;
 
-        const textGenUrl = `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/text_generation?simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&session_id=${encodeURIComponent(
-          newSession.session_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_name=${encodeURIComponent(
-          newSession.session_name
-        )}&stream=true`;
+        const textGenUrl = `${import.meta.env.VITE_API_ENDPOINT
+          }student/text_generation?simulation_group_id=${encodeURIComponent(
+            group.simulation_group_id
+          )}&session_id=${encodeURIComponent(
+            newSession.session_id
+          )}&patient_id=${encodeURIComponent(
+            patient.patient_id
+          )}&session_name=${encodeURIComponent(
+            newSession.session_name
+          )}&stream=true`;
 
         console.log(
           "🚀 Using AppSync streaming for session:",
@@ -911,11 +915,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           ...prevSession,
           session_name: textGenData.session_name,
         }));
-        const updateSessionName = `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/update_session_name?session_id=${encodeURIComponent(
-          newSession.session_id
-        )}`;
+        const updateSessionName = `${import.meta.env.VITE_API_ENDPOINT
+          }student/update_session_name?session_id=${encodeURIComponent(
+            newSession.session_id
+          )}`;
 
         setSessions((prevSessions) => {
           return prevSessions.map((s) =>
@@ -925,15 +928,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           );
         });
 
-        const updatePatientScore = `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/update_patient_score?patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&student_email=${encodeURIComponent(
-          userEmail
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&llm_verdict=${encodeURIComponent(textGenData.llm_verdict)}`;
+        const updatePatientScore = `${import.meta.env.VITE_API_ENDPOINT
+          }student/update_patient_score?patient_id=${encodeURIComponent(
+            patient.patient_id
+          )}&student_email=${encodeURIComponent(
+            userEmail
+          )}&simulation_group_id=${encodeURIComponent(
+            group.simulation_group_id
+          )}&llm_verdict=${encodeURIComponent(textGenData.llm_verdict)}`;
 
         return Promise.all([
           fetch(updateSessionName, {
@@ -1010,15 +1012,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       .then(({ email }) => {
         userEmail = email;
         const session_name = "New chat";
-        const url = `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/create_session?email=${encodeURIComponent(
-          userEmail
-        )}&simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_name=${encodeURIComponent(session_name)}`;
+        const url = `${import.meta.env.VITE_API_ENDPOINT
+          }student/create_session?email=${encodeURIComponent(
+            userEmail
+          )}&simulation_group_id=${encodeURIComponent(
+            group.simulation_group_id
+          )}&patient_id=${encodeURIComponent(
+            patient.patient_id
+          )}&session_name=${encodeURIComponent(session_name)}`;
 
         return fetch(url, {
           method: "POST",
@@ -1042,15 +1043,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         setSession(sessionData);
         setCreatingSession(false);
 
-        const textGenUrl = `${
-          import.meta.env.VITE_API_ENDPOINT
-        }student/text_generation?simulation_group_id=${encodeURIComponent(
-          group.simulation_group_id
-        )}&session_id=${encodeURIComponent(
-          sessionData.session_id
-        )}&patient_id=${encodeURIComponent(
-          patient.patient_id
-        )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
+        const textGenUrl = `${import.meta.env.VITE_API_ENDPOINT
+          }student/text_generation?simulation_group_id=${encodeURIComponent(
+            group.simulation_group_id
+          )}&session_id=${encodeURIComponent(
+            sessionData.session_id
+          )}&patient_id=${encodeURIComponent(
+            patient.patient_id
+          )}&session_name=${encodeURIComponent("New chat")}&stream=true`;
 
         console.log("Session data for text generation:", sessionData);
 
@@ -1084,8 +1084,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const { email } = await fetchUserAttributes();
       const token = authSession.tokens.idToken;
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }student/delete_session?email=${encodeURIComponent(
           email
         )}&simulation_group_id=${encodeURIComponent(
@@ -1127,8 +1126,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     const token = authSession.tokens.idToken;
     try {
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }student/delete_last_message?session_id=${encodeURIComponent(
           session.session_id
         )}`,
@@ -1210,8 +1208,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const { email } = await fetchUserAttributes();
       const token = authSession.tokens.idToken;
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }student/get_messages?session_id=${encodeURIComponent(
           session.session_id
         )}`,
@@ -1239,14 +1236,13 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         sortedData.forEach((message) => {
           // Filter out initial messages
           if (message.message_content.trim() === "introduce yourself briefly" ||
-              message.message_content.includes("Greet me and then ask me a question related to the patient:")) {
+            message.message_content.includes("Begin the conversation as the patient:")) {
             return;
           }
 
           // Create a unique key combining content and sender type
-          const contentKey = `${
-            message.student_sent ? "student" : "ai"
-          }-${message.message_content.trim()}`;
+          const contentKey = `${message.student_sent ? "student" : "ai"
+            }-${message.message_content.trim()}`;
 
           // Check for duplicates by ID or content
           if (
@@ -1554,11 +1550,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                     setLoading(true);
                   }
                 }}
-                className={`p-2 rounded-lg transition-colors duration-200 flex-shrink-0 ${
-                  isRecording
-                    ? "bg-red-100 text-red-600 hover:bg-red-200"
-                    : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
-                }`}
+                className={`p-2 rounded-lg transition-colors duration-200 flex-shrink-0 ${isRecording
+                  ? "bg-red-100 text-red-600 hover:bg-red-200"
+                  : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+                  }`}
               >
                 <MicIcon className="w-5 h-5" />
               </button>
@@ -1846,16 +1841,14 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               <button
                 onClick={() => setIsNotesOpen((prev) => !prev)}
                 aria-label={isNotesOpen ? "Close notes" : "Open notes"}
-                className={`w-12 h-12 rounded-full border flex items-center justify-center shadow-md transition-colors duration-200 ${
-                  isNotesOpen
-                    ? "bg-emerald-100 border-emerald-400"
-                    : "bg-white hover:bg-gray-50 border-gray-200"
-                }`}
+                className={`w-12 h-12 rounded-full border flex items-center justify-center shadow-md transition-colors duration-200 ${isNotesOpen
+                  ? "bg-emerald-100 border-emerald-400"
+                  : "bg-white hover:bg-gray-50 border-gray-200"
+                  }`}
               >
                 <EditNoteIcon
-                  className={`w-6 h-6 ${
-                    isNotesOpen ? "text-emerald-600" : "text-gray-700"
-                  }`}
+                  className={`w-6 h-6 ${isNotesOpen ? "text-emerald-600" : "text-gray-700"
+                    }`}
                 />
               </button>
             </div>

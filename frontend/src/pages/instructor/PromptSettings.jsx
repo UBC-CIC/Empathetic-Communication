@@ -24,7 +24,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { useNavigate } from "react-router-dom";
 import { UserContext } from "../../App";
 
-const CHARACTER_LIMIT = 1000;
+const CHARACTER_LIMIT = 4000;
 function groupTitleCase(str) {
   if (typeof str !== "string") return str;
   return str
@@ -108,8 +108,7 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
       const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }instructor/previous_prompts?simulation_group_id=${encodeURIComponent(
           simulation_group_id
         )}&instructor_email=${encodeURIComponent(email)}`,
@@ -130,8 +129,7 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
         const session = await fetchAuthSession();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }instructor/get_prompt?simulation_group_id=${encodeURIComponent(
             simulation_group_id
           )}`,
@@ -161,8 +159,7 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
       const token = session.tokens.idToken;
       const { email } = await fetchUserAttributes();
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }instructor/prompt?simulation_group_id=${encodeURIComponent(
           simulation_group_id
         )}&instructor_email=${encodeURIComponent(email)}`,
@@ -196,7 +193,8 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
   return (
     <Box
       sx={{
-        minHeight: "100vh",
+        minHeight: "auto",
+        overflow: "auto",
         bgcolor: "#ffffff",
         display: "flex",
         flexDirection: "column",
@@ -238,7 +236,12 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
               multiline
               minRows={6}
               value={userPrompt}
-              onChange={(e) => setUserPrompt(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value.length <= CHARACTER_LIMIT) { // to enforce the character limit
+                  setUserPrompt(value);
+                }
+              }}
               placeholder="Enter or paste your custom system prompt..."
               variant="outlined"
               inputProps={{
@@ -334,7 +337,7 @@ Again, YOU ARE SUPPOSED TO ACT AS THE PATIENT.`;
                   </Typography>
                   <Typography
                     variant="body2"
-                    sx={{ whiteSpace: "pre-wrap", mt: 1 }}
+                    sx={{ whiteSpace: "pre-wrap", mt: 1, textAlign: "left" }}
                   >
                     {previousPrompts[activeStep]?.previous_prompt}
                   </Typography>

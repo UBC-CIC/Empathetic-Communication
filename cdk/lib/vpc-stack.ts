@@ -146,7 +146,7 @@ export class VpcStack extends Stack {
         subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         privateDnsEnabled: true, // Enable private DNS for proper resolution
       });
-      
+
       // Add API Gateway VPC endpoint
       this.vpc.addInterfaceEndpoint("API Gateway Endpoint", {
         service: ec2.InterfaceVpcEndpointAwsService.APIGATEWAY,

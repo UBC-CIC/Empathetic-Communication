@@ -53,14 +53,18 @@ const GroupDetails = ({ group, onBack }) => {
   const [allInstructors, setAllInstructors] = useState([]);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
+  // new declaration for being able to change group name
+  const [groupName, setGroupName] = useState(group.group_name || "");
+
+
+
   useEffect(() => {
     const fetchActiveInstructors = async () => {
       try {
         const session = await fetchAuthSession();
         var token = session.tokens.idToken
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }admin/groupInstructors?simulation_group_id=${group.id}`,
           {
             method: "GET",
@@ -86,8 +90,7 @@ const GroupDetails = ({ group, onBack }) => {
         var token = session.tokens.idToken
         //replace if analytics for admin actions is needed
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }admin/instructors?instructor_email=replace`,
           {
             method: "GET",
@@ -109,15 +112,14 @@ const GroupDetails = ({ group, onBack }) => {
     };
     fetchActiveInstructors();
     fetchInstructors();
-    
+
     // Fetch empathy_enabled status
     const fetchEmpathyStatus = async () => {
       try {
         const session = await fetchAuthSession();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }admin/simulation_groups`,
           {
             method: "GET",
@@ -140,7 +142,7 @@ const GroupDetails = ({ group, onBack }) => {
         console.error("Error fetching empathy status:", error);
       }
     };
-    
+
     fetchEmpathyStatus();
     setLoading(false);
   }, []);
@@ -176,8 +178,7 @@ const GroupDetails = ({ group, onBack }) => {
     const session = await fetchAuthSession();
     var token = session.tokens.idToken
     const deleteResponse = await fetch(
-      `${
-        import.meta.env.VITE_API_ENDPOINT
+      `${import.meta.env.VITE_API_ENDPOINT
       }admin/delete_group?&simulation_group_id=${encodeURIComponent(group.id)}`,
       {
         method: "DELETE",
@@ -222,7 +223,7 @@ const GroupDetails = ({ group, onBack }) => {
     try {
       const session = await fetchAuthSession();
       const token = session.tokens.idToken;
-  
+
       // Delete existing enrollments
       const deleteResponse = await fetch(
         `${import.meta.env.VITE_API_ENDPOINT}admin/delete_group_instructor_enrolments?&simulation_group_id=${encodeURIComponent(
@@ -236,7 +237,7 @@ const GroupDetails = ({ group, onBack }) => {
           },
         }
       );
-  
+
       if (!deleteResponse.ok) {
         console.error("Failed to update enrolment:", deleteResponse.statusText);
         toast.error("Update enrolment Failed", {
@@ -251,7 +252,7 @@ const GroupDetails = ({ group, onBack }) => {
         });
         return;
       }
-  
+
       // Enroll new instructors in parallel
       const enrollPromises = activeInstructors.map((instructor) =>
         fetch(
@@ -284,10 +285,10 @@ const GroupDetails = ({ group, onBack }) => {
           }
         })
       );
-  
+
       const enrollResults = await Promise.all(enrollPromises);
       const allEnrolledSuccessfully = enrollResults.every((result) => result.success);
-  
+
       if (allEnrolledSuccessfully) {
         toast.success("Enrolment Updated!", {
           position: "top-center",
@@ -311,11 +312,13 @@ const GroupDetails = ({ group, onBack }) => {
           theme: "colored",
         });
       }
-  
+
       // Update group access
       const updateGroupAccess = await fetch(
         `${import.meta.env.VITE_API_ENDPOINT}admin/updateGroupAccess?&simulation_group_id=${encodeURIComponent(
           group.id
+        )}&group_name=${encodeURIComponent(
+          groupName
         )}&access=${encodeURIComponent(isActive)}&empathy_enabled=${encodeURIComponent(empathyEnabled)}&admin_voice_enabled=${encodeURIComponent(adminVoiceEnabled)}&instructor_voice_enabled=${encodeURIComponent(instructorVoiceEnabled)}`,
         {
           method: "POST",
@@ -325,7 +328,7 @@ const GroupDetails = ({ group, onBack }) => {
           },
         }
       );
-  
+
       if (!updateGroupAccess.ok) {
         console.error("Failed to update group access:", updateGroupAccess.statusText);
         toast.error("Update group access Failed", {
@@ -340,7 +343,7 @@ const GroupDetails = ({ group, onBack }) => {
         });
       } else {
         console.log("Group access updated successfully");
-  
+
         // Close the dialog after successful save
         onBack();
       }
@@ -358,7 +361,7 @@ const GroupDetails = ({ group, onBack }) => {
       });
     }
   };
-  
+
   return (
     <>
       {!loading && (
@@ -368,9 +371,18 @@ const GroupDetails = ({ group, onBack }) => {
         >
           <Toolbar />
           <Paper sx={{ padding: 2, marginBottom: 2 }}>
-            <Typography variant="h4" sx={{ marginBottom: 0 }}>
-              {group.group}
-            </Typography>
+            <TextField
+              label="Group Name"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              fullWidth
+              variant="outlined"
+              sx={{ mb: 2 }}
+              inputProps={{
+                maxLength: 50
+              }}
+            />
+
             <Divider sx={{ p: 1, marginBottom: 3 }} />
             <FormControl fullWidth sx={{ marginBottom: 2 }}>
               <Autocomplete
@@ -380,8 +392,8 @@ const GroupDetails = ({ group, onBack }) => {
                 getOptionLabel={(option) =>
                   option.first_name && option.last_name
                     ? `${titleCase(option.first_name)} ${titleCase(
-                        option.last_name
-                      )}`
+                      option.last_name
+                    )}`
                     : option.user_email
                 }
                 value={activeInstructors}
@@ -413,26 +425,26 @@ const GroupDetails = ({ group, onBack }) => {
             />
             <FormControlLabel
               control={
-                <Switch 
-                  checked={empathyEnabled} 
-                  onChange={(e) => setEmpathyEnabled(e.target.checked)} 
+                <Switch
+                  checked={empathyEnabled}
+                  onChange={(e) => setEmpathyEnabled(e.target.checked)}
                 />
               }
               label="Enable empathy coach"
             />
             <FormControlLabel
               control={
-                <Switch 
-                  checked={adminVoiceEnabled} 
-                  onChange={(e) => setAdminVoiceEnabled(e.target.checked)} 
+                <Switch
+                  checked={adminVoiceEnabled}
+                  onChange={(e) => setAdminVoiceEnabled(e.target.checked)}
                 />
               }
               label="Enable voice (Admin control)"
             />
             <FormControlLabel
               control={
-                <Switch 
-                  checked={instructorVoiceEnabled && adminVoiceEnabled} 
+                <Switch
+                  checked={instructorVoiceEnabled && adminVoiceEnabled}
                   onChange={(e) => setInstructorVoiceEnabled(e.target.checked)}
                   disabled={!adminVoiceEnabled}
                 />

@@ -98,7 +98,7 @@ def get_student_query(raw_query: str) -> str:
 def get_initial_student_query(patient_name: str) -> str:
     """Generate an initial query for the student to interact with the system."""
     return f"""
-    Greet me and then ask me a question related to the patient: {patient_name}. 
+    Begin the conversation as the patient: {patient_name}, by greeting the pharmacist and sharing why you're here. 
     """
 
 def get_default_system_prompt(patient_name) -> str:
@@ -568,33 +568,9 @@ def get_response(
     """
     logger.info(f"🔍 GET_RESPONSE CALLED - Stream: {stream}, Query: '{query[:50]}...'")
     
-    empathy_evaluation = None
+    # we want to save student message without blocking (empathy will be evaluated async during streaming)
+    save_message_to_db(session_id, True, query, None)
     empathy_feedback = ""
-    is_greeting = 'Greet me' in query or 'Hello.' == query.strip()
-    should_evaluate_non_streaming = len(query.strip()) > 0 and not is_greeting
-    
-    if should_evaluate_non_streaming:
-        try:
-            logger.info("🧠 NON-STREAMING: Starting empathy evaluation")
-            patient_context = f"Patient: {patient_name}, Age: {patient_age}, Condition: {patient_prompt}"
-            deployment_region = os.environ.get('AWS_REGION', 'us-east-1')
-            nova_client = {
-                "client": boto3.client("bedrock-runtime", region_name=deployment_region),
-                "model_id": "amazon.nova-pro-v1:0"
-            }
-            empathy_evaluation = evaluate_empathy(query, patient_context, nova_client)
-            save_message_to_db(session_id, True, query, empathy_evaluation)
-        except Exception as e:
-            logger.error(f"Empathy evaluation failed: {e}")
-            save_message_to_db(session_id, True, query, None)
-    else:
-        logger.info(f"🔍 NON-STREAMING: Skipping empathy evaluation - Query: '{query}'")
-        save_message_to_db(session_id, True, query, None)
-    
-    if empathy_evaluation:
-        empathy_feedback = build_empathy_feedback(empathy_evaluation)
-    else:
-        empathy_feedback = ""
     
     completion_string = """
                 Once I, the pharmacist, have give you a diagnosis, politely leave the conversation and wish me goodbye.
@@ -606,16 +582,24 @@ def get_response(
                 Once the proper diagnosis is provided, include SESSION COMPLETED in your response and politely end the conversation.
                 """
 
-    system_prompt = (
+    if not system_prompt or len(system_prompt.strip()) < 50:
+        system_prompt = get_default_system_prompt(patient_name)
+        logger.info("USING DEFAULT SYSTEM PROMPT, passed prompt was empty")
+
+    final_system_prompt = (
         f"""
         <|begin_of_text|>
         <|start_header_id|>patient<|end_header_id|>
-        Please pay close attention to this: {system_prompt} 
-        Here are some additional details about your personality, symptoms, or overall condition: {patient_prompt}
+        
+        CRITICAL: You are {patient_name}, a PATIENT seeking help from a pharmacist.
+        NEVER act as a doctor or pharmacist. ALWAYS respond as a patient.
+
+        {system_prompt}
+
+        Additional details about your personality, symptoms or condition:
+        {patient_prompt if patient_prompt else "No additional details provided."}
+
         {completion_string}
-        You are a patient named {patient_name}.
-         
-        {get_system_prompt(patient_name=patient_name)}
 
         <|eot_id|>
         <|start_header_id|>documents<|end_header_id|>
@@ -624,11 +608,15 @@ def get_response(
         """
     )
 
-    print(f"🔍 System prompt for {patient_name}:\\\\n{system_prompt}")
-    logger.info(f"🔍 System prompt, {patient_name}:\\\\n{system_prompt}")
+    logger.info("====================================")
+    logger.info("FINAL SYSTEM PROMPT BEING USED:")
+    logger.info(f"    system prompt length: {len(final_system_prompt)} chars")
+    logger.info(f"    contains PATIENT: {'patient' in final_system_prompt.lower()}")
+    logger.info(f"    first 400 chars\n{final_system_prompt[:400]}")
+    logger.info("====================================")
     
     qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
+        ("system", final_system_prompt),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
     ])
@@ -678,8 +666,6 @@ def get_response(
         return {"llm_output": response, "session_name": session_name, "llm_verdict": False}
     
     result = get_llm_output(response, llm_completion, empathy_feedback)
-    if empathy_evaluation:
-        result["empathy_evaluation"] = empathy_evaluation
     
     # Generate proper session name
     from datetime import datetime
@@ -733,8 +719,8 @@ def generate_streaming_response(
             
             if evaluation:
                 logger.info("🧠 Publishing empathy data to AppSync")
-                empathy_feedback = build_empathy_feedback(evaluation)
-                publish_to_appsync(session_id, {"type": "empathy", "content": empathy_feedback})
+                # empathy_feedback = build_empathy_feedback(evaluation)
+                publish_to_appsync(session_id, {"type": "empathy", "content": json.dumps(evaluation)})
             else:
                 logger.warning("🧠 No empathy evaluation to publish")
         except Exception as e:

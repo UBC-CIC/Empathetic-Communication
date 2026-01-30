@@ -38,7 +38,7 @@ class NovaSonic:
         # Credentials already set by server.js via STS
         pass
 
-    def __init__(self, model_id='amazon.nova-sonic-v1:0', region=None, socket_client=None, voice_id=None, session_id=None):
+    def __init__(self, model_id='amazon.nova-2-sonic-v1:0', region=None, socket_client=None, voice_id=None, session_id=None):
         self.user_id = os.getenv("USER_ID")
         self.model_id = model_id
         self.region = 'us-east-1'
@@ -65,6 +65,8 @@ class NovaSonic:
         self._bedrock_client = None
         self._chat_context = None
         self._current_user_input = ""
+        # Adding evaluation sequence tracking to prevent stale overwrites
+        self._empathy_eval_sequence = 0
 
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
@@ -135,46 +137,72 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
         """Cached system prompt retrieval with medical document integration using centralized connection manager"""
         if self._cached_system_prompt:
             return self._cached_system_prompt
-            
-        try:
-            logger.info("🔗 VOICE_SYSTEM_PROMPT: Using centralized voice connection manager")
-            
-            # Log pool status for monitoring
-            pool_status = voice_db_manager.get_pool_status()
-            logger.info(f"🔗 VOICE_POOL_STATUS: {pool_status}")
-            
-            conn = get_pg_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                'SELECT prompt_content FROM system_prompt_history ORDER BY created_at DESC LIMIT 1'
-            )
-            result = cursor.fetchone()
-            cursor.close()
-            return_pg_connection(conn)
-            
-            base_prompt = ""
-            if result and result[0]:
-                base_prompt = result[0]
-                logger.info("🔗 VOICE_SYSTEM_PROMPT_SUCCESS: Retrieved from database")
-            else:
-                base_prompt = self.get_default_system_prompt(patient_name or self.patient_name)
-                logger.info("🔗 VOICE_SYSTEM_PROMPT_FALLBACK: Using default prompt")
-            
-            # Add medical document context if available
-            medical_context = self._get_medical_context()
-            if medical_context:
-                base_prompt += f"\n\nMEDICAL CONTEXT:\n{medical_context}"
-                logger.info("📋 VOICE: Added medical document context to system prompt")
-            
-            self._cached_system_prompt = base_prompt
-            return self._cached_system_prompt
-        except Exception as e:
-            logger.error(f"Error retrieving system prompt: {e}")
-            
-        # Fallback to default
-        self._cached_system_prompt = self.get_default_system_prompt(patient_name or self.patient_name)
-        logger.info("🔗 VOICE_SYSTEM_PROMPT_FALLBACK: Using default prompt")
+
+        # first try to use patient_prompt from environment
+        env_patient_prompt = self.patient_prompt
+        env_patient_name = self.patient_name
+        print(f"PROMPT DEBUG: patient name = '{env_patient_name}'", flush=True)
+        print(f"PROMPT DEBUG: patient prompt length = {len(env_patient_prompt) if env_patient_prompt else 'N/A'}", flush=True)
+
+        # if we have a patient prompt, use it
+        if env_patient_prompt and env_patient_prompt.strip():
+            print(f"USING PATIENT PROMPT FROM ENVIRONMENT", flush=True)
+            base_prompt = env_patient_prompt
+
+            # inject patient name if provided
+            if env_patient_name and "{patient_name}" in base_prompt:
+                base_prompt = base_prompt.replace("{patient_name}", env_patient_name)
+            elif env_patient_name:
+                base_prompt = f"You are {env_patient_name}." + base_prompt
+        
+        else:
+            # ok now try database
+            try:
+                logger.info("VOICE_SYSTEM_PROMPT: checking DATABASE")
+                conn = get_pg_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT prompt_content FROM system_prompt_history ORDER BY created_at DESC LIMIT 1'
+                )
+                result = cursor.fetchone()
+                cursor.close()
+                return_pg_connection(conn)
+
+                if result and result[0]:
+                    base_prompt = result[0]
+                    print(f"USING PROMPT FROM DATABASE", flush=True)
+                    logger.info("VOICE SYSTEM PROMPT SUCCESS, Retrieved from database")
+                else:
+                    # default prompt
+                    base_prompt = self.get_default_system_prompt(env_patient_name)
+                    print("USING DEFAULT PROMPT", flush=True)
+                    logger.info("VOICE SYSTEM PROMPT FALLBACK - using default prompt")
+
+            except Exception as e:
+                logger.error(f"Error retrieving system prompt: {e}")
+                base_prompt = self.get_default_system_prompt(env_patient_name)
+                print(f"USING DEFAULT PROMPT - DATABASE ERROR", flush=True)
+
+        # add medical document context if available
+        medical_context = self._get_medical_context()
+        if medical_context:
+            base_prompt += f"\n\nMEDICAL CONTEXT:\n{medical_context}"
+            print(f"VOICE: added medical document context", flush=True)
+
+        # add extra system prompt if provided
+        if self.extra_system_prompt:
+            base_prompt += f"\n\n{self.extra_system_prompt}"
+            print(f"VOICE: added extra system prompt", flush=True)
+
+        print(f"====================================", flush=True) # just for readability
+        print(f"FINAL PROMPT PREVIEW:", flush=True)
+        print(f"{base_prompt[:300]}...", flush=True)
+        print(f"====================================", flush=True)
+
+        self._cached_system_prompt = base_prompt
         return self._cached_system_prompt
+
+
 
     async def start_session(self):
         """Start a new Nova Sonic session"""
@@ -335,6 +363,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             print(f"🔍 DEBUG: Audio ended, user input: {self._current_user_input[:50]}...", flush=True)
             logger.info(f"🎤 AUDIO END - User input: {self._current_user_input[:30]}...")
             
+            # incrementing sequence number
+            self._empathy_eval_sequence += 1
+            current_sequence = self._empathy_eval_sequence
+
+            # capturing the user input BEFORE creating async task to prevent race condition
+            captured_user_input = self._current_user_input
+            print(f"EVALUATION SEQUENCE: {current_sequence}: Starting for user input: {captured_user_input[:50]}...", flush=True)
             # Save user message to DB (CRITICAL for empathy coach review)
             print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
             asyncio.create_task(self._save_user_message_async(self._current_user_input))
@@ -342,10 +377,6 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             # CRITICAL: Direct empathy evaluation for voice input
             print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
             patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-            
-            # CRITICAL FIX: Capture the user input BEFORE creating async task to prevent race condition
-            captured_user_input = self._current_user_input
-            print(f"🔍 CRITICAL FIX: Captured user input: '{captured_user_input}'", flush=True)
             
             # Create empathy evaluation task with proper error handling
             async def safe_empathy_eval():
@@ -357,10 +388,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     else:
                         print(f"🧠 VOICE EMPATHY: Evaluation returned None", flush=True)
                 except Exception as e:
-                    print(f"🧠 VOICE EMPATHY: Evaluation failed with error: {e}", flush=True)
+                    print(f"🧠 VOICE EMPATHY: Evaluation Sequence {current_sequence} failed with error: {e}", flush=True)
                     logger.error(f"Voice empathy evaluation error: {e}")
             
             asyncio.create_task(safe_empathy_eval())
+
+            if self.llm_completion:
+                asyncio.create_task(self._evaluate_diagnosis_async(captured_user_input))
             
             self._current_user_input = ""  # Reset for next input
         else:
@@ -415,32 +449,36 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
 
         try:
             while self.is_active:
-                output = await self.stream.await_output()
-                result = await output[1].receive()
+                try:
+                    output = await self.stream.await_output()
+                    result = await output[1].receive()
 
-                if not (result.value and result.value.bytes_):
+                    if not (result.value and result.value.bytes_):
+                        continue
+
+                    chunk = result.value.bytes_.decode("utf-8")
+                    buffer += chunk
+
+                    idx = 0
+                    while True:
+                        try:
+                            obj, offset = decoder.raw_decode(buffer[idx:])
+                        except json.JSONDecodeError:
+                            break
+                        idx += offset
+                        await self._handle_event(obj)
+
+                    buffer = buffer[idx:]
+                except Exception as inner_e:
+                    print(f"🔥 Error in _process_responses() [inner loop]: {inner_e}", flush=True)
+                    await asyncio.sleep(0.1)
                     continue
-
-                # 1) Decode the raw bytes
-                chunk = result.value.bytes_.decode("utf-8")
-                buffer += chunk
-
-                # 2) Try to peel off as many complete JSON objects as possible
-                idx = 0
-                while True:
-                    try:
-                        obj, offset = decoder.raw_decode(buffer[idx:])
-                    except json.JSONDecodeError:
-                        break
-                    idx += offset
-                    # 3) Hand off each parsed object
-                    await self._handle_event(obj)
-
-                # 4) Keep only the unparsed tail
-                buffer = buffer[idx:]
 
         except Exception as e:
             print(f"🔥 Error in _process_responses(): {e}", flush=True)
+            self.is_active = False # signal for monitor task
+
+        
 
     async def _handle_event(self, json_data):
         """Dispatch one parsed JSON event to your existing logic."""
@@ -482,7 +520,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
 
             elif self.role == "USER":
                 print(f"User: {text}", flush=True)
-                print(json.dumps({"type": "text", "text": text}), flush=True)
+                # print(json.dumps({"type": "text", "text": text}), flush=True) <- we don't want to send this concatenated text to the frontend
                 
                 # CRITICAL FIX: Accumulate user input for empathy evaluation
                 if not hasattr(self, '_current_user_input'):
@@ -493,20 +531,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     self._current_user_input += text
                     print(f"🔍 DEBUG: Accumulated user input now: {len(self._current_user_input)} chars", flush=True)
                 
-                # CRITICAL FIX: Save USER message to database immediately
-                if text.strip():
-                    print(f"💾 SAVING USER MESSAGE TO DB: {text[:50]}...", flush=True)
-                    asyncio.create_task(self._save_user_message_async(text))
-                    
-                    logger.info(f"🧠 USER MESSAGE - Checking empathy: {text[:30]}...")
-                    
-                    # Use the direct empathy evaluation method for voice inputs
-                    patient_context = f"Patient: {self.patient_name}, Condition: {self.patient_prompt}"
-                    asyncio.create_task(self._evaluate_empathy(text, patient_context))
-                    
-                    # Check for diagnosis if LLM completion is enabled
-                    if self.llm_completion:
-                        asyncio.create_task(self._evaluate_diagnosis_async(text))
+                # no evaluation/DB save here, evaluation will be done ONCE in end_audio_input() with complete text
 
             logger.info(f"💬 [add_message] {self.role.upper()} | {self.session_id} | {text[:30]}")
 
@@ -714,8 +739,14 @@ Provide structured evaluation with detailed justifications for each score.
             print(f"❌ ASYNC SAVE FAILED: {e}", flush=True)
             logger.error(f"Failed to save user audio message: {e}")
     
-    async def _evaluate_empathy(self, student_response, patient_context):
+    async def _evaluate_empathy(self, student_response, patient_context, sequence=None):
         """LLM-as-a-Judge empathy evaluation using admin-controlled prompt system"""
+
+        # first, checking if this evaluation is still relevant
+        if sequence is not None and sequence < self._empathy_eval_sequence:
+            print(f"EVALUATION # {sequence} IS NO LONGER RELEVANT, newer evaluation #{self._empathy_eval_sequence} in progress, SKIPPING...", flush=True)
+            return None
+        
         print(f"🧠 VOICE: _evaluate_empathy CALLED with response: {student_response[:50]}...", flush=True)
         logger.info(f"🧠 VOICE: Starting empathy evaluation for: {student_response[:30]}...")
         
@@ -852,6 +883,10 @@ Provide structured evaluation with detailed justifications for each score.
                 # Save to database
                 self._save_message_to_db(self.session_id, True, student_response, empathy_result)
                 
+                # before sending feedback, check if still latest
+                if sequence is not None and sequence < self._empathy_eval_sequence:
+                    print(f"EVALUATION # {sequence}: RESULTS DISCARDED - newer evaluation exists", flush=True)
+                    return empathy_result # return but don't send to frontend
                 # Send empathy feedback
                 empathy_feedback = self._build_empathy_feedback(empathy_result)
                 if empathy_feedback:
@@ -1137,107 +1172,194 @@ Provide structured evaluation with detailed justifications for each score.
 if __name__ == "__main__":
     import sys
     import asyncio
+    import concurrent.futures
+    import traceback
     
     nova = None
+    stdin_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+    def read_stdin_line():
+        """Blocking stdin read in seperate thread"""
+        try:
+            return sys.stdin.readline();
+        except Exception as e:
+            print(f"STDIN READ ERROR: {e}", flush=True)
+            return None
     
-    async def handle_stdin():
-        """Handle commands from server.js via stdin"""
+
+    async def process_stdin_command(command):
+        """To process a single command from stdin"""
         global nova
+        cmd_type = command.get("type", "unknown")
+        print(f"STDIN COMMAND: {cmd_type}", flush=True)
+
+        try:
+            if cmd_type == "start_session":
+                if nova:
+                    await nova.end_session()
+                
+                nova = NovaSonic(
+                    session_id = command.get("session_id", "default"),
+                    voice_id = command.get("voice_id")
+                )
+
+                await nova.start_session()
+
+            elif cmd_type == "start_audio":
+                if nova:
+                    print("starting audio input...", flush=True)
+                    await nova.start_audio_input()
+                else:
+                    print("cannot start audio, nova NOT initialised", flush=True)
+            
+            elif cmd_type == "audio":
+                if nova:
+                    audio_data = base64.b64decode(command["data"])
+                    await nova.send_audio_chunk(audio_data)
+                else:
+                    print("cannot send audio, nova NOT initialised", flush=True)
+
+            elif cmd_type == "end_audio":
+                if nova:
+                    print("ending audio input...", flush=True)
+                    await nova.end_audio_input()
+                else:
+                    print("cannot end audio, nova NOT initialised", flush=True)
+
+            elif cmd_type == "evaluate_empathy":
+                if nova:
+                    print(f"processing empathy evaluation request!!", flush=True)
+                    asyncio.create_task(nova.handle_manual_empathy_evaluation(
+                        command["text"],
+                        command.get("session_id")
+                    ))
+
+            elif cmd_type == "text":
+                print(f"TEXT INPUT: {command.get('data', '')[:50]}...", flush=True)
+            
+            elif cmd_type == "end_session":
+                if nova:
+                    await nova.end_session()
+                    nova = None
         
+        except Exception as e:
+            print(f"COMMAND PROCESSING ERROR ({cmd_type}): {e}", flush=True)
+        
+    async def stdin_reader():
+        """Reads stdin commands without blocking the event loop"""
+        global nova
+        loop = asyncio.get_running_loop()
+
+        print("STDIN READER STARTED", flush=True)
+
         while True:
             try:
-                line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-                if not line:
+                # read a line in the thread pool with timeout capability
+                line = await loop.run_in_executor(stdin_executor, read_stdin_line)
+
+                if line is None:
+                    print("STDIN READER: received none. exiting", flush=True)
                     break
-                    
+        
                 line = line.strip()
                 if not line:
                     continue
-                    
+
                 try:
                     command = json.loads(line)
-                    print(f"💬 STDIN COMMAND: {command.get('type', 'unknown')}", flush=True)
-                    
-                    if command["type"] == "start_session":
-                        if nova:
-                            await nova.end_session()
-                        nova = NovaSonic(
-                            session_id=command.get("session_id", "default"),
-                            voice_id=command.get("voice_id"),
-                        )
-                        await nova.start_session()
-                        
-                    elif command["type"] == "start_audio" and nova:
-                        await nova.start_audio_input()
-                        
-                    elif command["type"] == "audio" and nova:
-                        audio_data = base64.b64decode(command["data"])
-                        await nova.send_audio_chunk(audio_data)
-                        
-                    elif command["type"] == "end_audio" and nova:
-                        await nova.end_audio_input()
-                        
-                    elif command["type"] == "evaluate_empathy" and nova:
-                        # Handle manual empathy evaluation from server.js
-                        print(f"🧠 STDIN: Processing empathy evaluation request", flush=True)
-                        asyncio.create_task(nova.handle_manual_empathy_evaluation(
-                            command["text"], 
-                            command.get("session_id")
-                        ))
-                        
-                    elif command["type"] == "text" and nova:
-                        # Handle text input (if needed)
-                        print(f"💬 TEXT INPUT: {command.get('data', '')[:50]}...", flush=True)
-                        
-                    elif command["type"] == "end_session" and nova:
-                        await nova.end_session()
-                        nova = None
-                        
+                    await process_stdin_command(command)
+
                 except json.JSONDecodeError as je:
-                    print(f"❌ JSON DECODE ERROR: {je} - Line: {line}", flush=True)
-                except Exception as cmd_error:
-                    print(f"❌ COMMAND ERROR: {cmd_error}", flush=True)
-                    logger.error(f"Command processing error: {cmd_error}")
-                    
-            except Exception as e:
-                print(f"❌ STDIN ERROR: {e}", flush=True)
-                logger.error(f"Stdin handling error: {e}")
+                    print(f"JSON DECODE ERROR: {je} - Line: {line[:100]}", flush=True)
+
+            except asyncio.CancelledError:
+                print("STDIN READER: cancelled", flush=True)
                 break
+            except Exception as e:
+                print(f"STDIN READER ERROR: {e}", flush=True)
+                await asyncio.sleep(0.1) # try to continue reading instead of breaking outright
+
+    async def monitor_response_task():
+        # to monitor the response processing task and restart if needed
+        global nova
+
+        while True:
+            await asyncio.sleep(5) # checking every 5 seconds
+
+            if nova and nova.is_active:
+                if nova.response is None or nova.response.done():
+                    if nova.response and nova.response.done():
+                        # checking for failure
+                        try:
+                            exc = nova.response.exception()
+                            if exc:
+                                print("RESPONSE TASK DIED WITH EXCEPTION: {exc}", flush=True)
+                        except asyncio.CancelledError:
+                            print("RESPONSE TASK WAS CANCELLED", flush=True)
+                        except asyncio.InvalidStateError:
+                            pass
+                    print("RESTARTING RESPONSE TASK", flush=True)
+                    nova.response = asyncio.create_task(nova._process_responses())
+    
     
     async def main():
-        """Main async function"""
+        """Main async function with proper concurrent task management"""
         global nova
         
         try:
             print(f"🚀 Nova Sonic Python process started", flush=True)
+            print(f"Python version: {sys.version}", flush=True)
             logger.info("Nova Sonic process initialized")
             
             # Auto-start session if environment variables are present
             session_id = os.getenv("SESSION_ID", "default")
             voice_id = os.getenv("VOICE_ID")
-            
-            if session_id != "default":
+
+            print(f"SESSION_ID: {session_id}", flush=True)
+            print(f"VOICE_ID: {voice_id}", flush=True)
+
+            if session_id and session_id != "default":
                 print(f"🚀 Auto-starting Nova Sonic session: {session_id}", flush=True)
                 nova = NovaSonic(session_id=session_id, voice_id=voice_id)
                 await nova.start_session()
+                print(f"NOVA SONIC SESSION STARTED SUCCESSFULLY!!!", flush=True)
+            else:
+                print(f"waiting for start session command...", flush=True)
             
-            # Handle stdin commands
-            await handle_stdin()
+            stdin_task = asyncio.create_task(stdin_reader())
+            monitor_task = asyncio.create_task(monitor_response_task())
+
+            # waiting for stdin_reader to complete when stdin closes
+            try:
+                await stdin_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                monitor_task.cancel()
+                try:
+                    await monitor_task
+                except asyncio.CancelledError:
+                    pass
             
         except KeyboardInterrupt:
             print(f"🚫 Nova Sonic process interrupted", flush=True)
             logger.info("Nova Sonic process interrupted by user")
         except Exception as e:
             print(f"❌ Nova Sonic process error: {e}", flush=True)
+            traceback.print_exc()
             logger.error(f"Nova Sonic process error: {e}")
         finally:
             if nova:
                 try:
                     await nova.end_session()
-                except:
-                    pass
-            print(f"🚫 Nova Sonic process ended", flush=True)
-            logger.info("Nova Sonic process ended")
+                except Exception as e:
+                    print(f"ERROR ENDING SESSION: {e}", flush=True)
+            
+        # clean up executor
+        stdin_executor.shutdown(wait=False)
+        print(f"NOVA SONIC PROCESS ENDED", flush=True)
+        logger.info("Nova Sonic process ended")
+            
     
     # Run the main async function
     asyncio.run(main())
