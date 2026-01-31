@@ -544,10 +544,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   };
 
   useEffect(() => {
-    if (patient) {
+    if (patient && group) {
       fetchFiles();
     }
-  }, [patient]);
+  }, [patient, group]);
 
   // Fetch empathy enabled status
   useEffect(() => {
