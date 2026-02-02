@@ -327,38 +327,45 @@ def get_empathy_prompt() -> str:
 
 def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
     """
-    LLM-as-a-Judge empathy evaluation using structured scoring methodology.
+    LLM-as-a-Judge empathy evaluation using structured scoring methodology with prompt caching.
     """
     logger.info("🧠 EMPATHY EVALUATION STARTED")
 
-    empathy_prompt_template = get_empathy_prompt()
-    logger.info(f"🎯 EMPATHY PROMPT LENGTH: {len(empathy_prompt_template)} characters")
-    logger.info(f"🎯 EMPATHY PROMPT PREVIEW: {empathy_prompt_template[:200]}...")
-    
+    # Get the empathy prompt - static part for caching (from DB or default)
     try:
-        evaluation_prompt = empathy_prompt_template.format(
-            patient_context=patient_context,
-            user_text=student_response
-        )
-        logger.info(f"✅ PROMPT FORMATTING SUCCESSFUL - Final prompt length: {len(evaluation_prompt)}")
-    except Exception as format_error:
-        logger.error(f"❌ ADMIN PROMPT FORMATTING ERROR: {format_error}")
-        logger.error(f"❌ FALLING BACK TO DEFAULT EMPATHY PROMPT")
-        try:
-            default_prompt = get_default_empathy_prompt()
-            evaluation_prompt = default_prompt.format(
-                patient_context=patient_context,
-                user_text=student_response
-            )
-            logger.info(f"✅ DEFAULT PROMPT FORMATTING SUCCESSFUL - Final prompt length: {len(evaluation_prompt)}")
-        except Exception as default_error:
-            logger.error(f"❌ DEFAULT PROMPT ALSO FAILED: {default_error}")
-            return None
+        static_system_prompt = get_empathy_prompt()
+        logger.info(f"🎯 EMPATHY PROMPT LENGTH: {len(static_system_prompt)} characters")
+    except Exception as prompt_error:
+        logger.error(f"EMPATHY PROMPT ERROR: {prompt_error}, using default")
+        static_system_prompt = get_default_empathy_prompt()
 
+    # Build dynamic user prompt with the specific case data
+    dynamic_user_prompt = f"""patient_context: {patient_context}
+user_text: {student_response}"""
+    
+    logger.info(f"✅ Using prompt caching - Static prompt: {len(static_system_prompt)} chars, Dynamic: {len(dynamic_user_prompt)} chars")
+    
+    # CRITICAL VALIDATION: Ensure the user text is included
+    if student_response not in dynamic_user_prompt:
+        logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
+        return None
+
+    # Build request body with prompt caching
     body = {
+        "system": [
+            {
+                "text": static_system_prompt
+            },
+            {
+                "cachePoint": {
+                    "type": "default",
+                    "ttl": "5m"
+                }
+            }
+        ],
         "messages": [{
             "role": "user",
-            "content": [{"text": evaluation_prompt}]
+            "content": [{"text": dynamic_user_prompt}]
         }],
         "inferenceConfig": {
             "temperature": 0.1,
@@ -388,9 +395,20 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             logger.info("✅ BEDROCK FALLBACK CALL SUCCESSFUL")
         
         result = json.loads(response["body"].read())
+
+        # Log cache usage
+        usage = result.get("usage", {})
+        cache_read = usage.get('cacheReadInputTokens', 0)
+        cache_write = usage.get('cacheWriteInputTokens', 0)
+        if cache_read > 0:
+            logger.info(f"✅ CACHE HIT! Read {cache_read} tokens from cache")
+        elif cache_write > 0:
+            logger.info(f"📝 CACHE MISS! Wrote {cache_write} tokens to cache")
+
+        logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
+
         response_text = result["output"]["message"]["content"][0]["text"]
         logger.info(f"📝 BEDROCK RESPONSE LENGTH: {len(response_text)} characters")
-        logger.info(f"📝 BEDROCK RESPONSE PREVIEW: {response_text[:300]}...")
         
         json_start = response_text.find('{')
         json_end = response_text.rfind('}') + 1
