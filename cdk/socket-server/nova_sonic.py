@@ -607,6 +607,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     return self._get_default_empathy_prompt()
                 
                 # Fix JSON formatting issues - replace single braces with double braces in JSON template
+                """
                 if '"empathy_score":' in prompt_content and '{{' not in prompt_content:
                     logger.info("🔧 VOICE: FIXING ADMIN PROMPT JSON FORMATTING")
                     import re
@@ -624,7 +625,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                         # Fallback: simple replacement for any JSON-like structure
                         logger.info("🔧 VOICE: APPLYING FALLBACK JSON FORMATTING")
                         prompt_content = re.sub(r'\{(\s*"empathy_score"[^}]*?)\}', r'{{\1}}', prompt_content, flags=re.DOTALL)
-                        logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED")
+                        logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED") """
                 
                 return prompt_content
             else:
@@ -699,7 +700,7 @@ Evaluate: How well does the response show emotional attunement and comfort?
 **JUDGE OUTPUT FORMAT:**
 Provide structured evaluation with detailed justifications for each score.
 
-{{
+{
     "empathy_score": <integer 1-5>,
     "perspective_taking": <integer 1-5>,
     "emotional_resonance": <integer 1-5>,
@@ -708,7 +709,7 @@ Provide structured evaluation with detailed justifications for each score.
     "cognitive_empathy": <integer 1-5>,
     "affective_empathy": <integer 1-5>,
     "realism_flag": "realistic|unrealistic",
-    "judge_reasoning": {{
+    "judge_reasoning": {
         "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
         "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
         "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
@@ -717,16 +718,16 @@ Provide structured evaluation with detailed justifications for each score.
         "affective_empathy_justification": "Detailed explanation for affective empathy score",
         "realism_justification": "Detailed explanation for realism assessment",
         "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
-    }},
-    "feedback": {{
+    },
+    "feedback": {
         "strengths": ["Specific strengths with evidence from response"],
         "areas_for_improvement": ["Specific areas needing improvement with examples"],
         "why_realistic": "Judge explanation for realistic assessment (if applicable)",
         "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
         "improvement_suggestions": ["Actionable, specific improvement recommendations"],
         "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
-    }}
-}}
+    }
+}
 """
     
     async def _save_user_message_async(self, user_text):
