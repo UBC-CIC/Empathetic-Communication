@@ -805,12 +805,9 @@ Provide structured evaluation with detailed justifications for each score.
             body = {
                 "system": [
                     {
-                        "text": static_system_prompt
-                    },
-                    {
+                        "text": static_system_prompt,
                         "cachePoint": {
-                            "type": "default",
-                            "ttl": "5m"
+                            "type": "default"
                         }
                     }
                 ],

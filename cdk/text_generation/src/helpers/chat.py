@@ -354,13 +354,10 @@ user_text: {student_response}"""
     body = {
         "system": [
             {
-                "text": static_system_prompt
-            },
-            {
+                "text": static_system_prompt,
                 "cachePoint": {
-                    "type": "default",
-                    "ttl": "5m"
-                }
+                    "type": "default"
+                }   
             }
         ],
         "messages": [{
