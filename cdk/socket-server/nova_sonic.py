@@ -851,6 +851,14 @@ Provide structured evaluation with detailed justifications for each score.
 
             # Log cache usage
             usage = result.get("usage", {})
+
+            # logging all the token stats
+            logger.info(f"FULL USAGE OBJECT: {usage}")
+            logger.info(f"INPUT TOKENS: {usage.get('inputTokens', 0)}")
+            logger.info(f"OUTPUT TOKENS: {usage.get('outputTokens', 0)}")
+            logger.info(f"CACHE READ INPUT TOKENS: {usage.get('cacheReadInputTokens', 0)}")
+            logger.info(f"CACHE WRITE INPUT TOKENS: {usage.get('cacheWriteInputTokens', 0)}")
+
             cache_read = usage.get('cacheReadInputTokens', 0)
             cache_write = usage.get('cacheWriteInputTokens', 0)
             if cache_read > 0:
