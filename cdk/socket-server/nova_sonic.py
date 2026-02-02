@@ -804,17 +804,19 @@ Provide structured evaluation with detailed justifications for each score.
             
             # Build request body with prompt caching
             body = {
-                "system": [
-                    {
-                        "text": static_system_prompt,
-                        "cachePoint": {
-                            "type": "default"
-                        }
-                    }
-                ],
                 "messages": [{
                     "role": "user",
-                    "content": [{"text": dynamic_user_prompt}]
+                    "content": [
+                        {
+                            "text": static_system_prompt,
+                            "cachePoint": {
+                                "type": "default"
+                            }
+                        },
+                        {
+                            "text": dynamic_user_prompt
+                        }
+                    ]
                 }],
                 "inferenceConfig": {
                     "temperature": 0.1,
