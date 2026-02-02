@@ -353,24 +353,28 @@ user_text: {student_response}"""
 
     # Build request body with prompt caching
     body = {
-        "messages": [{
-            "role": "user",
-            "content": [
+            "system": [
                 {
                     "text": static_system_prompt,
                     "cachePoint": {
                         "type": "default"
                     }
-                },
-                {
-                    "text": dynamic_user_prompt
                 }
-            ]
-        }],
-        "inferenceConfig": {
-            "temperature": 0.1,
-            "maxTokens": 1200
-        }
+            ],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "text": dynamic_user_prompt
+                        }
+                    ]
+                }
+            ],
+            "inferenceConfig": {
+                "temperature": 0.1,
+                "maxTokens": 1200
+            }
     }
     
     try:
