@@ -15,10 +15,10 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION,
 };
 
-const StackPrefix = app.node.tryGetContext("StackPrefix");
-const environment = app.node.tryGetContext("environment");
-const githubRepo = app.node.tryGetContext("githubRepo");
-const githubBranch = app.node.tryGetContext("githubBranch") || "main";
+const StackPrefix = "Empathetic-Communication";   // instead of tryGetContext
+const environment = "dev";                         // instead of tryGetContext
+const githubRepo = "Empathetic-Communication";    // instead of tryGetContext
+const githubBranch = "main";
 
 const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, { env });
 const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, {
