@@ -107,7 +107,7 @@ def is_connection_alive(conn):
 
         # checking transaction status - if in failed transaction, connection is bad
         if conn.status != extensions.STATUS_READY:
-            logger.warning("Connection in bad state: {conn.status}")
+            logger.warning(f"Connection in bad state: {conn.status}")
             return False
         
         # Testing a simple query
@@ -123,7 +123,7 @@ def is_connection_alive(conn):
         logger.warning(f"⚠️ Connection health check failed (unexpected): {e}")
         return False
 
-def get_db_connection:
+def get_db_connection():
     # Get or create a database connection through RDS Proxy with health check
     global connection
 
