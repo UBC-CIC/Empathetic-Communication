@@ -93,7 +93,7 @@ export class CICDStack extends cdk.Stack {
             this,
             "GitHubConnection",
             {
-                connectionName: `${id}-github-connection`,
+                connectionName: `${id.substring(0, 20)}-github-conn`,
                 providerType: "GitHub",
             }
         );
