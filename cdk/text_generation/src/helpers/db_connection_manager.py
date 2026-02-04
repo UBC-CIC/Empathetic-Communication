@@ -40,6 +40,7 @@ class DatabaseConnectionManager:
         self._initialized = True
         self._pool = None
         self._config = None
+        self._secret_version = None
         self._last_health_check = 0
         self._health_check_interval = 300  # 5 minutes
         
