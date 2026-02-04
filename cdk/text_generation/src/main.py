@@ -157,8 +157,7 @@ def get_db_connection():
                 password=secret["password"],
                 host=RDS_PROXY_ENDPOINT,
                 port=secret["port"],
-                connect_timeout=5,
-                options="-c statement_timeout=30000"  # 30 second query timeout
+                connect_timeout=5
             )
             
             # ✅ CRITICAL: Enable autocommit to prevent transaction issues
