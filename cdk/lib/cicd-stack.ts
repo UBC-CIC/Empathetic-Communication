@@ -254,42 +254,50 @@ export class CICDStack extends cdk.Stack {
 
                             build: {
                                 commands: [
-                                    'if [ "$SHOULD_BUILD" = "true" ]; then',
-                                    '  echo "Building Docker image..."',
-                                    '  docker build -t $REPOSITORY_URI:$IMAGE_TAG $CODEBUILD_SRC_DIR/$PATH_FILTER -f $CODEBUILD_SRC_DIR/$PATH_FILTER/Dockerfile',
-                                    'else',
-                                    '  echo "Skipping build phase"',
-                                    'fi',
+                                    `
+                                    if [ "$SHOULD_BUILD" = "true" ]; then
+                                    echo "Building Docker image..."
+                                    docker build -t $REPOSITORY_URI:$IMAGE_TAG $CODEBUILD_SRC_DIR/$PATH_FILTER -f $CODEBUILD_SRC_DIR/$PATH_FILTER/Dockerfile
+                                    else
+                                    echo "Skipping build phase"
+                                    fi
+                                    `,
                                 ],
                             },
 
+
                             post_build: {
                                 commands: [
-                                    'if [ "$SHOULD_BUILD" = "true" ]; then',
-                                    '  echo "Tagging + pushing images..."',
-                                    '  docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest',
-                                    '  docker push $REPOSITORY_URI:$IMAGE_TAG',
-                                    '  docker push $REPOSITORY_URI:latest',
-                                    '  echo "Waiting briefly for vulnerability scan to start..."',
-                                    '  sleep 30',
-                                    '  echo "Checking vulnerability scan results (CRITICAL)..."',
-                                    '  SCAN_RESULTS=$(aws ecr describe-image-scan-findings --repository-name $REPO_NAME --image-id imageTag=latest --query "imageScanFindingsSummary.findingCounts.CRITICAL" --output text 2>/dev/null || echo "0")',
-                                    '  if [[ "$SCAN_RESULTS" != "0" && "$SCAN_RESULTS" != "None" ]]; then',
-                                    '    echo "CRITICAL vulnerabilities found: $SCAN_RESULTS. Blocking deployment."',
-                                    '    exit 1',
-                                    '  else',
-                                    '    echo "No critical vulnerabilities found. Proceeding."',
-                                    '  fi',
-                                    '  echo "Checking if Lambda function exists before updating..."',
-                                    '  if aws lambda get-function --function-name "$LAMBDA_FUNCTION_NAME" &>/dev/null; then',
-                                    '    echo "Updating Lambda function to use new image (latest)..."',
-                                    '    aws lambda update-function-code --function-name "$LAMBDA_FUNCTION_NAME" --image-uri "$REPOSITORY_URI:latest"',
-                                    '  else',
-                                    '    echo "Lambda function $LAMBDA_FUNCTION_NAME does not exist yet. Skipping update."',
-                                    '  fi',
-                                    'else',
-                                    '  echo "Skipping post_build (no changes detected)"',
-                                    'fi',
+                                    `
+                                    if [ "$SHOULD_BUILD" = "true" ]; then
+                                    echo "Tagging + pushing images..."
+                                    docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+                                    docker push $REPOSITORY_URI:$IMAGE_TAG
+                                    docker push $REPOSITORY_URI:latest
+
+                                    echo "Waiting briefly for vulnerability scan..."
+                                    sleep 30
+
+                                    SCAN_RESULTS=$(aws ecr describe-image-scan-findings \
+                                        --repository-name $REPO_NAME \
+                                        --image-id imageTag=latest \
+                                        --query "imageScanFindingsSummary.findingCounts.CRITICAL" \
+                                        --output text 2>/dev/null || echo "0")
+
+                                    if [[ "$SCAN_RESULTS" != "0" && "$SCAN_RESULTS" != "None" ]]; then
+                                        echo "CRITICAL vulnerabilities found: $SCAN_RESULTS"
+                                        exit 1
+                                    fi
+
+                                    if aws lambda get-function --function-name "$LAMBDA_FUNCTION_NAME" &>/dev/null; then
+                                        aws lambda update-function-code \
+                                        --function-name "$LAMBDA_FUNCTION_NAME" \
+                                        --image-uri "$REPOSITORY_URI:latest"
+                                    fi
+                                    else
+                                    echo "Skipping post_build (no changes)"
+                                    fi
+                                    `,
                                 ],
                             },
                         },
