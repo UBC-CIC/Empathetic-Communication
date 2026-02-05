@@ -344,6 +344,15 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         // ADD MESSAGE TO CHAT UI
         console.log("Voice text message received:", data.text);
         if (data.text && data.text.trim()) {
+
+          // Filtering out voice transcripts and role-prefixed messages
+          if (data.text.startsWith("[VOICE_TRANSCRIPT]") ||
+            data.text.trim().startsWith("Assistant:") ||
+            data.text.trim().startsWith("User:")) {
+            console.log("Filtered out voice transcript or role-prefixed message", data.text.substring(0, 30));
+            return;
+          }
+
           const newMsg = {
             message_id: `voice_${Date.now()}`,
             student_sent: false,
@@ -535,10 +544,10 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   };
 
   useEffect(() => {
-    if (patient) {
+    if (patient && group) {
       fetchFiles();
     }
-  }, [patient]);
+  }, [patient, group]);
 
   // Fetch empathy enabled status
   useEffect(() => {
@@ -1237,6 +1246,18 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           // Filter out initial messages
           if (message.message_content.trim() === "introduce yourself briefly" ||
             message.message_content.includes("Begin the conversation as the patient:")) {
+            return;
+          }
+
+          // Filtering out the final voice transcript message
+          if (message.message_content.startsWith("[VOICE_TRANSCRIPT]")) {
+            console.log("Filtered out the final voice transcript message");
+            return;
+          }
+
+          // Filtering out any messages prefixed with Assistant: or User:
+          if (message.message_content.trim().startsWith("Assistant:") || message.message_content.trim().startsWith("User:")) {
+            console.log("Filtered out the message prefixed with Assistant: or User:");
             return;
           }
 

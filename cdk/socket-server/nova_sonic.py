@@ -370,9 +370,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             # capturing the user input BEFORE creating async task to prevent race condition
             captured_user_input = self._current_user_input
             print(f"EVALUATION SEQUENCE: {current_sequence}: Starting for user input: {captured_user_input[:50]}...", flush=True)
+
+            # adding prefix here for frontend filtering
+            prefixed_user_input = f"[VOICE_TRANSCRIPT]{captured_user_input}"
+            
             # Save user message to DB (CRITICAL for empathy coach review)
             print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
-            asyncio.create_task(self._save_user_message_async(self._current_user_input))
+            asyncio.create_task(self._save_user_message_async(prefixed_user_input))
             
             # CRITICAL: Direct empathy evaluation for voice input
             print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
@@ -603,6 +607,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                     return self._get_default_empathy_prompt()
                 
                 # Fix JSON formatting issues - replace single braces with double braces in JSON template
+                """
                 if '"empathy_score":' in prompt_content and '{{' not in prompt_content:
                     logger.info("🔧 VOICE: FIXING ADMIN PROMPT JSON FORMATTING")
                     import re
@@ -620,7 +625,7 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
                         # Fallback: simple replacement for any JSON-like structure
                         logger.info("🔧 VOICE: APPLYING FALLBACK JSON FORMATTING")
                         prompt_content = re.sub(r'\{(\s*"empathy_score"[^}]*?)\}', r'{{\1}}', prompt_content, flags=re.DOTALL)
-                        logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED")
+                        logger.info("✅ VOICE: FALLBACK JSON FORMATTING APPLIED") """
                 
                 return prompt_content
             else:
@@ -695,7 +700,7 @@ Evaluate: How well does the response show emotional attunement and comfort?
 **JUDGE OUTPUT FORMAT:**
 Provide structured evaluation with detailed justifications for each score.
 
-{{
+{
     "empathy_score": <integer 1-5>,
     "perspective_taking": <integer 1-5>,
     "emotional_resonance": <integer 1-5>,
@@ -704,7 +709,7 @@ Provide structured evaluation with detailed justifications for each score.
     "cognitive_empathy": <integer 1-5>,
     "affective_empathy": <integer 1-5>,
     "realism_flag": "realistic|unrealistic",
-    "judge_reasoning": {{
+    "judge_reasoning": {
         "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
         "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
         "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
@@ -713,16 +718,16 @@ Provide structured evaluation with detailed justifications for each score.
         "affective_empathy_justification": "Detailed explanation for affective empathy score",
         "realism_justification": "Detailed explanation for realism assessment",
         "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
-    }},
-    "feedback": {{
+    },
+    "feedback": {
         "strengths": ["Specific strengths with evidence from response"],
         "areas_for_improvement": ["Specific areas needing improvement with examples"],
         "why_realistic": "Judge explanation for realistic assessment (if applicable)",
         "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
         "improvement_suggestions": ["Actionable, specific improvement recommendations"],
         "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
-    }}
-}}
+    }
+}
 """
     
     async def _save_user_message_async(self, user_text):
@@ -739,10 +744,11 @@ Provide structured evaluation with detailed justifications for each score.
             print(f"❌ ASYNC SAVE FAILED: {e}", flush=True)
             logger.error(f"Failed to save user audio message: {e}")
     
+    
     async def _evaluate_empathy(self, student_response, patient_context, sequence=None):
         """LLM-as-a-Judge empathy evaluation using admin-controlled prompt system"""
 
-        # first, checking if this evaluation is still relevant
+        # First, checking if this evaluation is still relevant
         if sequence is not None and sequence < self._empathy_eval_sequence:
             print(f"EVALUATION # {sequence} IS NO LONGER RELEVANT, newer evaluation #{self._empathy_eval_sequence} in progress, SKIPPING...", flush=True)
             return None
@@ -775,49 +781,47 @@ Provide structured evaluation with detailed justifications for each score.
             print(f"🧠 VOICE: Creating bedrock client for region: {self.deployment_region or 'us-east-1'}", flush=True)
             bedrock_client = boto3.client("bedrock-runtime", region_name=self.deployment_region or 'us-east-1')
             
-            # Get admin-controlled empathy prompt (same as chat.py)
-            empathy_prompt_template = self._get_empathy_prompt()
-            logger.info(f"🎯 VOICE: EMPATHY PROMPT LENGTH: {len(empathy_prompt_template)} characters")
-            
+            # Get the empathy prompt - static part for caching (from DB or default)
             try:
-                evaluation_prompt = empathy_prompt_template.format(
-                    patient_context=patient_context,
-                    user_text=student_response
-                )
-                logger.info(f"✅ VOICE: PROMPT FORMATTING SUCCESSFUL - Final prompt length: {len(evaluation_prompt)}")
-                
-                # CRITICAL VALIDATION: Ensure the user text was actually substituted
-                if student_response not in evaluation_prompt:
-                    logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN FORMATTED PROMPT - This will cause hallucination!")
-                    return None
-                    
-            except Exception as format_error:
-                logger.error(f"❌ VOICE: ADMIN PROMPT FORMATTING ERROR: {format_error}")
-                logger.error(f"❌ VOICE: FALLING BACK TO DEFAULT EMPATHY PROMPT")
-                try:
-                    default_prompt = self._get_default_empathy_prompt()
-                    evaluation_prompt = default_prompt.format(
-                        patient_context=patient_context,
-                        user_text=student_response
-                    )
-                    logger.info(f"✅ VOICE: DEFAULT PROMPT FORMATTING SUCCESSFUL")
-                    
-                    # CRITICAL VALIDATION: Ensure user text is in default prompt too
-                    if student_response not in evaluation_prompt:
-                        logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN DEFAULT PROMPT EITHER")
-                        return None
-                        
-                except Exception as default_error:
-                    logger.error(f"❌ VOICE: DEFAULT PROMPT ALSO FAILED: {default_error}")
-                    return None
+                static_system_prompt = self._get_empathy_prompt()
+                logger.info(f"🎯 VOICE: EMPATHY PROMPT LENGTH: {len(static_system_prompt)} characters")
+            except Exception as prompt_error:
+                logger.error(f"VOICE: EMPATHY PROMPT ERROR: {prompt_error}, using default")
+                static_system_prompt = self._get_default_empathy_prompt()
+
+            # Build dynamic user prompt with the specific case data
+            dynamic_user_prompt = f"""patient_context: {patient_context}
+    user_text: {student_response}"""
+            
+            logger.info(f"✅ VOICE: Using prompt caching - Static prompt: {len(static_system_prompt)} chars, Dynamic: {len(dynamic_user_prompt)} chars")
+            
+            # CRITICAL VALIDATION: Ensure the user text is included
+            if student_response not in dynamic_user_prompt:
+                logger.error(f"❌ VOICE: USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
+                return None
             
             print(f"🧠 VOICE: Sending evaluation prompt to Nova Pro", flush=True)
             
+            # Build request body with prompt caching
             body = {
-                "messages": [{
-                    "role": "user",
-                    "content": [{"text": evaluation_prompt}]
-                }],
+                "system": [
+                    {
+                        "text": static_system_prompt,
+                        "cachePoint": {
+                            "type": "default"
+                        }
+                    }
+                ],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "text": dynamic_user_prompt
+                            }
+                        ]
+                    }
+                ],
                 "inferenceConfig": {
                     "temperature": 0.1,
                     "maxTokens": 1200
@@ -844,6 +848,22 @@ Provide structured evaluation with detailed justifications for each score.
                 logger.info("✅ VOICE: BEDROCK FALLBACK CALL SUCCESSFUL")
             
             result = json.loads(response["body"].read())
+
+            # Log cache usage
+            usage = result.get("usage", {})
+
+            # logging all the token stats
+            logger.info(f"FULL USAGE OBJECT: {usage}")
+
+            cache_read = usage.get('cacheReadInputTokenCount', 0)
+            cache_write = usage.get('cacheWriteInputTokenCount', 0)
+            if cache_read > 0:
+                print(f"✅ CACHE HIT! Read {cache_read} tokens from cache", flush=True)
+            elif cache_write > 0:
+                print(f"📝 CACHE MISS! Wrote {cache_write} tokens to cache", flush=True)
+
+            logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
+
             response_text = result["output"]["message"]["content"][0]["text"]
             logger.info(f"📝 VOICE: BEDROCK RESPONSE LENGTH: {len(response_text)} characters")
             
@@ -857,7 +877,7 @@ Provide structured evaluation with detailed justifications for each score.
                 empathy_result = json.loads(json_text)
                 logger.info(f"✅ VOICE: JSON PARSING SUCCESSFUL - Keys: {list(empathy_result.keys())}")
                 
-                # Convert string scores to integers and validate (same as chat.py)
+                # Convert string scores to integers and validate
                 required_scores = ['perspective_taking', 'emotional_resonance', 'acknowledgment', 'language_communication', 'cognitive_empathy', 'affective_empathy']
                 for score_key in required_scores:
                     score_value = empathy_result.get(score_key)
@@ -883,10 +903,11 @@ Provide structured evaluation with detailed justifications for each score.
                 # Save to database
                 self._save_message_to_db(self.session_id, True, student_response, empathy_result)
                 
-                # before sending feedback, check if still latest
+                # Before sending feedback, check if still latest
                 if sequence is not None and sequence < self._empathy_eval_sequence:
                     print(f"EVALUATION # {sequence}: RESULTS DISCARDED - newer evaluation exists", flush=True)
-                    return empathy_result # return but don't send to frontend
+                    return empathy_result  # Return but don't send to frontend
+                
                 # Send empathy feedback
                 empathy_feedback = self._build_empathy_feedback(empathy_result)
                 if empathy_feedback:
@@ -912,7 +933,8 @@ Provide structured evaluation with detailed justifications for each score.
             except Exception as save_error:
                 logger.error(f"🧠 VOICE: Failed to save message as fallback: {save_error}")
             return None
-    
+
+
     def _get_medical_context(self):
         """Retrieve medical document context from vectorstore using RDS proxy"""
         try:

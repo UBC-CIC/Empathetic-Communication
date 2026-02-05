@@ -240,7 +240,7 @@ Evaluate: How well does the response show emotional attunement and comfort?
 **JUDGE OUTPUT FORMAT:**
 Provide structured evaluation with detailed justifications for each score.
 
-{{
+{
     "empathy_score": <integer 1-5>,
     "perspective_taking": <integer 1-5>,
     "emotional_resonance": <integer 1-5>,
@@ -249,7 +249,7 @@ Provide structured evaluation with detailed justifications for each score.
     "cognitive_empathy": <integer 1-5>,
     "affective_empathy": <integer 1-5>,
     "realism_flag": "realistic|unrealistic",
-    "judge_reasoning": {{
+    "judge_reasoning": {
         "perspective_taking_justification": "Detailed explanation for perspective-taking score with specific evidence",
         "emotional_resonance_justification": "Detailed explanation for emotional resonance score with specific evidence",
         "acknowledgment_justification": "Detailed explanation for acknowledgment score with specific evidence",
@@ -258,16 +258,16 @@ Provide structured evaluation with detailed justifications for each score.
         "affective_empathy_justification": "Detailed explanation for affective empathy score",
         "realism_justification": "Detailed explanation for realism assessment",
         "overall_assessment": "Supportive summary addressing the student directly using 'you' language with encouraging tone"
-    }},
-    "feedback": {{
+    },
+    "feedback": {
         "strengths": ["Specific strengths with evidence from response"],
         "areas_for_improvement": ["Specific areas needing improvement with examples"],
         "why_realistic": "Judge explanation for realistic assessment (if applicable)",
         "why_unrealistic": "Judge explanation for unrealistic assessment (if applicable)",
         "improvement_suggestions": ["Actionable, specific improvement recommendations"],
         "alternative_phrasing": "Judge-recommended alternative phrasing for this scenario"
-    }}
-}}
+    }
+}
 """
 
 def get_empathy_prompt() -> str:
@@ -300,6 +300,7 @@ def get_empathy_prompt() -> str:
                 logger.error(f"❌ FALLING BACK TO DEFAULT PROMPT")
                 return get_default_empathy_prompt()
             
+            """
             # Fix JSON formatting issues - replace single braces with double braces in JSON template
             if '"empathy_score":' in prompt_content and '{{' not in prompt_content:
                 logger.info("🔧 FIXING ADMIN PROMPT JSON FORMATTING")
@@ -312,7 +313,7 @@ def get_empathy_prompt() -> str:
                     fixed = json_str.replace('{', '{{').replace('}', '}}')
                     return fixed
                 prompt_content = re.sub(json_pattern, fix_braces, prompt_content, flags=re.DOTALL)
-                logger.info("✅ ADMIN PROMPT JSON FORMATTING FIXED")
+                logger.info("✅ ADMIN PROMPT JSON FORMATTING FIXED")"""
             
             return prompt_content
         else:
@@ -327,45 +328,55 @@ def get_empathy_prompt() -> str:
 
 def evaluate_empathy(student_response: str, patient_context: str, bedrock_client) -> dict:
     """
-    LLM-as-a-Judge empathy evaluation using structured scoring methodology.
+    LLM-as-a-Judge empathy evaluation using structured scoring methodology with prompt caching.
     """
     logger.info("🧠 EMPATHY EVALUATION STARTED")
 
-    empathy_prompt_template = get_empathy_prompt()
-    logger.info(f"🎯 EMPATHY PROMPT LENGTH: {len(empathy_prompt_template)} characters")
-    logger.info(f"🎯 EMPATHY PROMPT PREVIEW: {empathy_prompt_template[:200]}...")
-    
+    # Get the empathy prompt - static part for caching (from DB or default)
     try:
-        evaluation_prompt = empathy_prompt_template.format(
-            patient_context=patient_context,
-            user_text=student_response
-        )
-        logger.info(f"✅ PROMPT FORMATTING SUCCESSFUL - Final prompt length: {len(evaluation_prompt)}")
-    except Exception as format_error:
-        logger.error(f"❌ ADMIN PROMPT FORMATTING ERROR: {format_error}")
-        logger.error(f"❌ FALLING BACK TO DEFAULT EMPATHY PROMPT")
-        try:
-            default_prompt = get_default_empathy_prompt()
-            evaluation_prompt = default_prompt.format(
-                patient_context=patient_context,
-                user_text=student_response
-            )
-            logger.info(f"✅ DEFAULT PROMPT FORMATTING SUCCESSFUL - Final prompt length: {len(evaluation_prompt)}")
-        except Exception as default_error:
-            logger.error(f"❌ DEFAULT PROMPT ALSO FAILED: {default_error}")
-            return None
+        static_system_prompt = get_empathy_prompt()
+        logger.info(f"🎯 EMPATHY PROMPT LENGTH: {len(static_system_prompt)} characters")
+    except Exception as prompt_error:
+        logger.error(f"EMPATHY PROMPT ERROR: {prompt_error}, using default")
+        static_system_prompt = get_default_empathy_prompt()
 
-    body = {
-        "messages": [{
-            "role": "user",
-            "content": [{"text": evaluation_prompt}]
-        }],
-        "inferenceConfig": {
-            "temperature": 0.1,
-            "maxTokens": 1200
-        }
-    }
+    # Build dynamic user prompt with the specific case data
+    dynamic_user_prompt = f"""patient_context: {patient_context}
+user_text: {student_response}"""
     
+    logger.info(f"✅ Using prompt caching - Static prompt: {len(static_system_prompt)} chars, Dynamic: {len(dynamic_user_prompt)} chars")
+    
+    # CRITICAL VALIDATION: Ensure the user text is included
+    if student_response not in dynamic_user_prompt:
+        logger.error(f"❌ USER TEXT NOT FOUND IN DYNAMIC PROMPT - This will cause hallucination!")
+        return None
+
+    # Build request body with prompt caching
+    body = {
+            "system": [
+                {
+                    "text": static_system_prompt,
+                    "cachePoint": {
+                        "type": "default"
+                    }
+                }
+            ],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "text": dynamic_user_prompt
+                        }
+                    ]
+                }
+            ],
+            "inferenceConfig": {
+                "temperature": 0.1,
+                "maxTokens": 1200
+            }
+    }
+
     try:
         logger.info(f"🚀 CALLING BEDROCK MODEL: {bedrock_client['model_id']}")
         try:
@@ -388,9 +399,24 @@ def evaluate_empathy(student_response: str, patient_context: str, bedrock_client
             logger.info("✅ BEDROCK FALLBACK CALL SUCCESSFUL")
         
         result = json.loads(response["body"].read())
+
+        # Log cache usage
+        usage = result.get("usage", {})
+
+        logger.info(f"FULL USAGE OBJECT: {usage}")
+
+        cache_read = usage.get('cacheReadInputTokenCount', 0)
+        cache_write = usage.get('cacheWriteInputTokenCount', 0)
+    
+        if cache_read > 0:
+            logger.info(f"✅ CACHE HIT! Read {cache_read} tokens from cache")
+        elif cache_write > 0:
+            logger.info(f"📝 CACHE MISS! Wrote {cache_write} tokens to cache")
+
+        logger.info(f"CACHE STATS: Read = {cache_read}, Write = {cache_write}")
+
         response_text = result["output"]["message"]["content"][0]["text"]
         logger.info(f"📝 BEDROCK RESPONSE LENGTH: {len(response_text)} characters")
-        logger.info(f"📝 BEDROCK RESPONSE PREVIEW: {response_text[:300]}...")
         
         json_start = response_text.find('{')
         json_end = response_text.rfind('}') + 1

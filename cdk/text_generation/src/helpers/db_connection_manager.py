@@ -40,12 +40,13 @@ class DatabaseConnectionManager:
         self._initialized = True
         self._pool = None
         self._config = None
+        self._secret_version = None
         self._last_health_check = 0
         self._health_check_interval = 300  # 5 minutes
         
         # Optimized settings for RDS Proxy
         self.min_connections = 1          # Start small
-        self.max_connections = 8          # Conservative for RDS Proxy  
+        self.max_connections = 2          # Reduced from 8 to only 2 per Lambda (RDS Proxy pools them) 
         self.connection_timeout = 30      # Prevent hanging
         self.idle_timeout = 300          # 5 min cleanup
         self.pool_refresh_interval = 3600 # Hourly refresh
@@ -53,9 +54,9 @@ class DatabaseConnectionManager:
         logger.info("🔗 DB_CONNECTION_MANAGER: Initializing centralized connection manager")
         logger.info(f"🔗 DB_POOL_CONFIG: min={self.min_connections}, max={self.max_connections}, timeout={self.connection_timeout}s")
         
-    def _get_db_config(self) -> Dict[str, Any]:
+    def _get_db_config(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Get database configuration from environment and secrets"""
-        if self._config is not None:
+        if self._config is not None and not force_refresh:
             return self._config
             
         try:
@@ -70,6 +71,21 @@ class DatabaseConnectionManager:
             secrets_client = boto3.client('secretsmanager')
             secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
             secret = json.loads(secret_response['SecretString'])
+
+            # ✅ Check for secret rotation
+            new_version = secret_response.get('VersionId')
+            if self._secret_version and new_version != self._secret_version:
+                logger.warning(f"🔄 SECRET_ROTATION_DETECTED: {self._secret_version} -> {new_version}")
+                # Close existing pool to force reconnection with new credentials
+                if self._pool:
+                    try:
+                        self._pool.closeall()
+                    except:
+                        pass
+                    self._pool = None
+            
+            self._secret_version = new_version
+            logger.info(f"✅ SECRET_LOADED: Version {self._secret_version}")
             
             self._config = {
                 'host': rds_endpoint,
@@ -86,6 +102,31 @@ class DatabaseConnectionManager:
         except Exception as e:
             logger.error(f"❌ DB_CONFIG_ERROR: {e}")
             raise
+
+    def _is_connection_healthy(self, conn) -> bool:
+        """Check if a connection is actually usable"""
+        try:
+            if conn.closed:
+                logger.debug("🔍 Connection is closed")
+                return False
+            
+            # Check transaction status
+            if conn.status != extensions.STATUS_READY:
+                logger.debug(f"🔍 Connection in bad state: {conn.status}")
+                return False
+            
+            # Quick health check query
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            return True
+            
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            logger.debug("🔍 Connection health check failed (network issue)")
+            return False
+        except Exception as e:
+            logger.debug(f"🔍 Connection health check failed: {e}")
+            return False
     
     def _create_pool(self):
         """Create optimized connection pool for RDS Proxy"""
@@ -100,9 +141,12 @@ class DatabaseConnectionManager:
                 **config
             )
             
-            # Test the pool
+            # Test the pool and set autocommit on test connection
             test_conn = self._pool.getconn()
-            test_conn.close()
+            test_conn.autocommit = True
+            cursor = test_conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
             self._pool.putconn(test_conn)
             
             logger.info("✅ DB_POOL_CREATED: Connection pool initialized successfully")
@@ -140,6 +184,11 @@ class DatabaseConnectionManager:
         except Exception as e:
             logger.warning(f"⚠️ DB_POOL_HEALTH_WARNING: {e}")
             # Recreate pool if health check fails
+            if self._pool:
+                try:
+                    self._pool.closeall()
+                except:
+                    pass
             self._pool = None
     
     @contextmanager
@@ -155,6 +204,7 @@ class DatabaseConnectionManager:
         
         connection = None
         start_time = time.time()
+        connection_is_bad = False
         
         try:
             logger.debug("🔗 DB_CONNECTION_REQUEST: Getting connection from pool")
@@ -163,11 +213,36 @@ class DatabaseConnectionManager:
             if connection is None:
                 raise Exception("Failed to get connection from pool")
             
+            connection.autocommit = True # to prevent transaction issues
+
+            # ✅ Verify connection is healthy before using
+            if not self._is_connection_healthy(connection):
+                logger.warning("⚠️ Got unhealthy connection from pool, getting fresh one")
+                self._pool.putconn(connection, close=True)
+                connection = self._pool.getconn()
+                connection.autocommit = True
+            
             # Log connection acquisition time
             acquisition_time = time.time() - start_time
             logger.debug(f"🔗 DB_CONNECTION_ACQUIRED: Got connection in {acquisition_time:.3f}s")
             
             yield connection
+
+        except psycopg2.OperationalError as e:
+            error_msg = str(e).lower()
+            # Check for authentication errors (possible rotation)
+            if 'password' in error_msg or 'authentication' in error_msg:
+                logger.warning(f"⚠️ AUTH_ERROR: Possible secret rotation - {e}")
+                # Force config refresh and pool recreation
+                self._config = None
+                if self._pool:
+                    try:
+                        self._pool.closeall()
+                    except:
+                        pass
+                    self._pool = None
+            connection_is_bad = True
+            raise
             
         except Exception as e:
             logger.error(f"❌ DB_CONNECTION_ERROR: {e}")
@@ -182,15 +257,15 @@ class DatabaseConnectionManager:
         finally:
             if connection:
                 try:
-                    # Ensure transaction is clean
-                    if not connection.closed:
-                        connection.rollback()
-                    
-                    # Return connection to pool
-                    self._pool.putconn(connection)
-                    
-                    total_time = time.time() - start_time
-                    logger.debug(f"🔗 DB_CONNECTION_RETURNED: Connection returned to pool after {total_time:.3f}s")
+                    # ✅ With autocommit, no need to rollback
+                    # Just return connection to pool (or close if bad)
+                    if connection_is_bad:
+                        self._pool.putconn(connection, close=True)
+                        logger.debug("🔗 DB_CONNECTION_CLOSED: Bad connection closed")
+                    else:
+                        self._pool.putconn(connection)
+                        total_time = time.time() - start_time
+                        logger.debug(f"🔗 DB_CONNECTION_RETURNED: Connection returned to pool after {total_time:.3f}s")
                     
                 except Exception as e:
                     logger.warning(f"⚠️ DB_CONNECTION_CLEANUP_WARNING: {e}")
@@ -207,14 +282,12 @@ class DatabaseConnectionManager:
                 cursor = conn.cursor()
                 logger.debug("🔗 DB_CURSOR_CREATED: Database cursor ready")
                 yield cursor
-                conn.commit()
-                logger.debug("✅ DB_TRANSACTION_COMMITTED: Transaction completed successfully")
+                # ✅ With autocommit, changes are already committed
+                logger.debug("✅ DB_OPERATION_COMPLETE: Operation completed (autocommit)")
                 
             except Exception as e:
                 logger.error(f"❌ DB_CURSOR_ERROR: {e}")
-                if conn and not conn.closed:
-                    conn.rollback()
-                    logger.debug("🔄 DB_TRANSACTION_ROLLBACK: Transaction rolled back")
+                # with autocommit, no need to rollback
                 raise
                 
             finally:
@@ -233,7 +306,9 @@ class DatabaseConnectionManager:
             "min_connections": self.min_connections,
             "max_connections": self.max_connections,
             "pool_type": "ThreadedConnectionPool",
-            "last_health_check": self._last_health_check
+            "last_health_check": self._last_health_check,
+            "secret_version": self._secret_version,
+            "autocommit": True
         }
     
     def close_pool(self):

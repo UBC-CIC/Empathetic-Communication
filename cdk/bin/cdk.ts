@@ -3,7 +3,7 @@ import "source-map-support/register";
 import * as cdk from "aws-cdk-lib";
 import { AmplifyStack } from "../lib/amplify-stack";
 import { ApiServiceStack } from "../lib/api-service-stack";
-
+import { CICDStack } from "../lib/cicd-stack";
 import { DatabaseStack } from "../lib/database-stack";
 import { DBFlowStack } from "../lib/dbFlow-stack";
 import { VpcStack } from "../lib/vpc-stack";
@@ -15,7 +15,10 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION,
 };
 
-const StackPrefix = app.node.tryGetContext("StackPrefix");
+const StackPrefix = "Empathetic-Communication";   // instead of tryGetContext
+const environment = "dev";                         // instead of tryGetContext
+const githubRepo = "Empathetic-Communication";    // instead of tryGetContext
+const githubBranch = "main";
 
 const vpcStack = new VpcStack(app, `${StackPrefix}-VpcStack`, { env });
 const dbStack = new DatabaseStack(app, `${StackPrefix}-Database`, vpcStack, {
@@ -29,6 +32,25 @@ const apiStack = new ApiServiceStack(
   null, // ecsSocketStack will be passed later
   { env }
 );
+// Defining the new CI/CD Stack
+const cicdStack = new CICDStack(app, `${StackPrefix}-CICD`, {
+  env,
+  githubRepo: githubRepo,
+  githubBranch: githubBranch,
+  environmentName: environment,
+  lambdaFunctions: [
+    {
+      name: "TextGen",
+      functionName: `${StackPrefix}-Api-TextGenLambdaDockerFunction`,
+      sourceDir: "cdk/text_generation",
+    },
+    {
+      name: "DataIngestion",
+      functionName: `${StackPrefix}-Api-DataIngestLambdaDockerFunction`,
+      sourceDir: "cdk/data_ingestion",
+    },
+  ],
+});
 const ecsSocketStack = new EcsSocketStack(
   app,
   `${StackPrefix}-EcsSocket`,
