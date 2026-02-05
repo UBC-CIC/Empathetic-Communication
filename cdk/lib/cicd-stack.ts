@@ -254,7 +254,6 @@ export class CICDStack extends cdk.Stack {
 
                             build: {
                                 commands: [
-                                    // FIX: conditional build
                                     'if [ "$SHOULD_BUILD" = "true" ]; then',
                                     '  echo "Building Docker image..."',
                                     '  docker build -t $REPOSITORY_URI:$IMAGE_TAG $CODEBUILD_SRC_DIR/$PATH_FILTER -f $CODEBUILD_SRC_DIR/$PATH_FILTER/Dockerfile',
@@ -267,42 +266,27 @@ export class CICDStack extends cdk.Stack {
                             post_build: {
                                 commands: [
                                     'if [ "$SHOULD_BUILD" = "true" ]; then',
-
-                                    'echo "Tagging + pushing images..."',
-                                    "docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest",
-                                    "docker push $REPOSITORY_URI:$IMAGE_TAG",
-                                    "docker push $REPOSITORY_URI:latest",
-
-                                    'echo "Waiting briefly for vulnerability scan to start..."',
-                                    "sleep 30",
-
-                                    'echo "Checking vulnerability scan results (CRITICAL)..."',
-                                    `bash -c '
-                    SCAN_RESULTS=$(aws ecr describe-image-scan-findings \
-                      --repository-name $REPO_NAME \
-                      --image-id imageTag=latest \
-                      --query "imageScanFindingsSummary.findingCounts.CRITICAL" \
-                      --output text 2>/dev/null || echo "0")
-
-                    if [[ "$SCAN_RESULTS" != "0" && "$SCAN_RESULTS" != "None" ]]; then
-                      echo "CRITICAL vulnerabilities found: $SCAN_RESULTS. Blocking deployment."
-                      exit 1
-                    else
-                      echo "No critical vulnerabilities found. Proceeding."
-                    fi
-                  '`,
-
-                                    'echo "Checking if Lambda function exists before updating..."',
-                                    `bash -c '
-                    if aws lambda get-function --function-name "$LAMBDA_FUNCTION_NAME" &>/dev/null; then
-                      echo "Updating Lambda function to use new image (latest)..."
-                      aws lambda update-function-code \
-                        --function-name "$LAMBDA_FUNCTION_NAME" \
-                        --image-uri "$REPOSITORY_URI:latest"
-                    else
-                      echo "Lambda function $LAMBDA_FUNCTION_NAME does not exist yet. Skipping update."
-                    fi
-                  '`,
+                                    '  echo "Tagging + pushing images..."',
+                                    '  docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest',
+                                    '  docker push $REPOSITORY_URI:$IMAGE_TAG',
+                                    '  docker push $REPOSITORY_URI:latest',
+                                    '  echo "Waiting briefly for vulnerability scan to start..."',
+                                    '  sleep 30',
+                                    '  echo "Checking vulnerability scan results (CRITICAL)..."',
+                                    '  SCAN_RESULTS=$(aws ecr describe-image-scan-findings --repository-name $REPO_NAME --image-id imageTag=latest --query "imageScanFindingsSummary.findingCounts.CRITICAL" --output text 2>/dev/null || echo "0")',
+                                    '  if [[ "$SCAN_RESULTS" != "0" && "$SCAN_RESULTS" != "None" ]]; then',
+                                    '    echo "CRITICAL vulnerabilities found: $SCAN_RESULTS. Blocking deployment."',
+                                    '    exit 1',
+                                    '  else',
+                                    '    echo "No critical vulnerabilities found. Proceeding."',
+                                    '  fi',
+                                    '  echo "Checking if Lambda function exists before updating..."',
+                                    '  if aws lambda get-function --function-name "$LAMBDA_FUNCTION_NAME" &>/dev/null; then',
+                                    '    echo "Updating Lambda function to use new image (latest)..."',
+                                    '    aws lambda update-function-code --function-name "$LAMBDA_FUNCTION_NAME" --image-uri "$REPOSITORY_URI:latest"',
+                                    '  else',
+                                    '    echo "Lambda function $LAMBDA_FUNCTION_NAME does not exist yet. Skipping update."',
+                                    '  fi',
                                     'else',
                                     '  echo "Skipping post_build (no changes detected)"',
                                     'fi',
