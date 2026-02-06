@@ -211,16 +211,6 @@ class VoiceConnectionManager:
         except Exception as e:
             logger.error(f"❌ VOICE_CONNECTION_ERROR: {e}")
             raise
-
-        finally:
-            if conn:
-                try:
-                    if bad:
-                        self._pool.putconn(conn, close=True)
-                    else:
-                        self._pool.putconn(conn)
-                except:
-                    pass
     
     def return_connection(self, connection):
         """Return connection to pool"""
