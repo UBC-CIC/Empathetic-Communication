@@ -128,6 +128,7 @@ def get_embedding_count(patient_id):
     except psycopg2.errors.UndefinedTable as e:
         # Handles case where tables do not exist yet (first patient)
         logger.warning("LangChain tables do not exist yet as this might be the first patient being created. Returning 0 embeddings.")
+        connection.rollback()
         return 0
 
     except Exception as e:

@@ -40,12 +40,13 @@ class VoiceConnectionManager:
         self._initialized = True
         self._pool = None
         self._config = None
+        self._secret_version = None
         self._last_health_check = 0
         self._health_check_interval = 300  # 5 minutes
         
         # Optimized settings for voice workloads with RDS Proxy
-        self.min_connections = 2          # Higher minimum for voice
-        self.max_connections = 10         # Increased from 5 to handle voice bursts
+        self.min_connections = 1          # Higher minimum for voice isn't needed when you're using RDS Proxy
+        self.max_connections = 2          # Small : RDS Proxy handles real pooling
         self.connection_timeout = 30      # Prevent hanging
         self.idle_timeout = 300          # 5 min cleanup
         
@@ -69,6 +70,19 @@ class VoiceConnectionManager:
             secrets_client = boto3.client('secretsmanager')
             secret_response = secrets_client.get_secret_value(SecretId=db_secret_name)
             secret = json.loads(secret_response['SecretString'])
+
+            # Rotation awareness
+            new_version = secret_response.get('VersionId')
+            if self._secret_version and new_version != self._secret_version:
+                logger.warning("🔄 VOICE_SECRET_ROTATION")
+                if self._pool:
+                    try:
+                        self._pool.closeall()
+                    except:
+                        pass
+                    self._pool = None
+
+            self._secret_version = new_version
             
             self._config = {
                 'host': rds_endpoint,
@@ -80,14 +94,28 @@ class VoiceConnectionManager:
                 'application_name': f"nova_sonic_voice_{os.environ.get('SESSION_ID', 'unknown')}"
             }
             
+            logger.info("✅ VOICE_SECRET_LOADED")
             return self._config
             
         except Exception as e:
             logger.error(f"❌ VOICE_CONFIG_ERROR: {e}")
             raise
     
+    def _is_connection_healthy(self, conn) -> bool:
+        try:
+            if conn.closed:
+                return False
+            if conn.status != extensions.STATUS_READY:
+                return False
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            return True
+        except:
+            return False
+
     def _create_pool(self):
-        """Create optimized connection pool for voice processing"""
+        """Create minimal pool (RDS Proxy does real pooling)"""
         try:
             config = self._get_db_config()
             
@@ -101,30 +129,84 @@ class VoiceConnectionManager:
             
             # Test the pool
             test_conn = self._pool.getconn()
-            test_conn.close()
+            test_conn.autocommit = True
+            cursor = test_conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
             self._pool.putconn(test_conn)
             
-            logger.info("✅ VOICE_POOL_CREATED: Voice connection pool initialized successfully")
-            logger.info(f"🔗 VOICE_POOL_OPTIMIZATION: Optimized for voice workloads with {self.max_connections} max connections")
+            logger.info("✅ VOICE_POOL_CREATED")
             
         except Exception as e:
             logger.error(f"❌ VOICE_POOL_CREATION_ERROR: {e}")
             raise
+
+    def _health_check(self):
+        now = time.time()
+        if now - self._last_health_check < self._health_check_interval:
+            return
+            
+        try:
+            if self._pool:
+                logger.info("🔗 VOICE_POOL_HEALTH_CHECK")
+                test_conn = self._pool.getconn()
+                cursor = test_conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+                cursor.close()
+                self._pool.putconn(test_conn)
+                logger.info("✅ VOICE_POOL_HEALTH_OK")
+            
+            self._last_health_check = now
+
+        except Exception as e:
+            logger.error(f"❌ VOICE_POOL_HEALTH_ERROR: {e}")
+            if self._pool:
+                try:
+                    self._pool.closeall()
+                except:
+                    pass
+            
+            self._pool = None
     
     def get_connection(self):
         """Get connection from pool (non-context manager for compatibility)"""
         if self._pool is None:
             self._create_pool()
         
+        self._health_check()
+        connection = None
+        bad = False
+        
         try:
             logger.debug("🔗 VOICE_CONNECTION_REQUEST: Getting connection from voice pool")
             connection = self._pool.getconn()
+            connection.autocommit = True
+
+            if not self._is_connection_healthy(connection):
+                self._pool.putconn(connection, close=True)
+                connection = self._pool.getconn()
+                connection.autocommit = True
             
             if connection is None:
                 raise Exception("Failed to get connection from voice pool")
             
             logger.debug("🔗 VOICE_CONNECTION_ACQUIRED: Got connection from voice pool")
             return connection
+
+        except psycopg2.OperationalError as e:
+            msg = str(e).lower()
+            if 'password' in msg or 'authentication' in msg:
+                logger.warning("⚠️ VOICE_AUTH_ERROR: forcing secret refresh")
+                self._config = None
+                if self._pool:
+                    try:
+                        self._pool.closeall()
+                    except:
+                        pass
+                    self._pool = None
+            bad = True
+            raise
             
         except Exception as e:
             logger.error(f"❌ VOICE_CONNECTION_ERROR: {e}")
@@ -154,7 +236,8 @@ class VoiceConnectionManager:
             "status": "active",
             "min_connections": self.min_connections,
             "max_connections": self.max_connections,
-            "pool_type": "ThreadedConnectionPool",
+            "secret_version": self._secret_version,
+            "autocommit": True,
             "optimized_for": "voice_processing",
             "last_health_check": self._last_health_check
         }
