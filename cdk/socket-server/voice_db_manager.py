@@ -74,7 +74,7 @@ class VoiceConnectionManager:
             # Rotation awareness
             new_version = secret_response.get('VersionId')
             if self._secret_version and new_version != self._secret_version:
-                logger.warning(f"🔄 VOICE_SECRET_ROTATION: {self._secret_version} -> {new_version}")
+                logger.warning("🔄 VOICE_SECRET_ROTATION")
                 if self._pool:
                     try:
                         self._pool.closeall()
@@ -94,7 +94,7 @@ class VoiceConnectionManager:
                 'application_name': f"nova_sonic_voice_{os.environ.get('SESSION_ID', 'unknown')}"
             }
             
-            logger.info(f"✅ VOICE_SECRET_LOADED: Version {self._secret_version}")
+            logger.info("✅ VOICE_SECRET_LOADED")
             return self._config
             
         except Exception as e:
