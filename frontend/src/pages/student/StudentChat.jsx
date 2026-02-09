@@ -1250,7 +1250,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           }
 
           // Filtering out the final voice transcript message
-          if (message.message_content.startsWith("[VOICE_TRANSCRIPT]")) {
+          if (message.message_content.trim().includes("[VOICE_TRANSCRIPT]")) {
             console.log("Filtered out the final voice transcript message");
             return;
           }
