@@ -530,7 +530,7 @@ Provide structured evaluation with detailed justifications for each score.
       <TabPanel value={activeTab} index={0}>
         <Card sx={{ boxShadow: 3, borderRadius: 2, width: "100%" }}>
           <CardContent sx={{ p: 4 }}>
-            <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
               <ChatIcon sx={{ mr: 1, color: "#10b981" }} />
               <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
                 System Prompt Manager
@@ -581,7 +581,7 @@ Provide structured evaluation with detailed justifications for each score.
         {/* System Prompt History */}
         <Card sx={{ mt: 3, boxShadow: 3, borderRadius: 2, width: "100%" }}>
           <CardContent sx={{ p: 4 }}>
-            <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
               <HistoryIcon sx={{ mr: 1, color: "#10b981" }} />
               <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
                 System Prompt History
@@ -649,7 +649,7 @@ Provide structured evaluation with detailed justifications for each score.
       <TabPanel value={activeTab} index={1}>
         <Card sx={{ mb: 4, boxShadow: 3, borderRadius: 2, width: "100%" }}>
           <CardContent sx={{ p: 4 }}>
-            <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
               <PsychologyIcon sx={{ mr: 1, color: "#10b981" }} />
               <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
                 Empathy Coach Prompt Manager
@@ -707,7 +707,7 @@ Provide structured evaluation with detailed justifications for each score.
         {/* Empathy Prompt History */}
         <Card sx={{ mt: 3, boxShadow: 3, borderRadius: 2, width: "100%" }}>
           <CardContent sx={{ p: 4 }}>
-            <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 1, justifyContent: "center" }}>
               <HistoryIcon sx={{ mr: 1, color: "#10b981" }} />
               <Typography variant="h6" sx={{ fontWeight: 600, color: "#1f2937" }}>
                 Empathy Prompt History

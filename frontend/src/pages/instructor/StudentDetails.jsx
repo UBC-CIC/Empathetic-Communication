@@ -136,8 +136,7 @@ const formatNotes = (noteText) => (
 );
 
 const StudentDetails = () => {
-  const { studentId } = useParams();
-  const simulation_group_id = localStorage.getItem("selectedGroupId");
+  const { simulationGroupId: simulation_group_id, studentId } = useParams();
   const student = JSON.parse(localStorage.getItem("selectedStudent"));
   const [tabs, setTabs] = useState([]);
   const [sessions, setSessions] = useState({});
