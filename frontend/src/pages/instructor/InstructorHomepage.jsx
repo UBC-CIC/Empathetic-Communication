@@ -44,22 +44,46 @@ function titleCase(str) {
 
 // group details page
 const GroupDetails = () => {
-  const { groupName } = useParams();
+  const { simulationGroupId } = useParams();
   const [selectedComponent, setSelectedComponent] = useState(
     "InstructorAnalytics"
   );
-  const [simulationGroupId, setSimulationGroupId] = useState(
-    localStorage.getItem("selectedGroupId") || null
-  );
+
+  const [groupName, setGroupName] = useState("");
 
   useEffect(() => {
-    if (!simulationGroupId) {
-      const storedGroupId = localStorage.getItem("selectedGroupId");
-      if (storedGroupId) {
-        setSimulationGroupId(storedGroupId);
+    const fetchGroupName = async () => {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens.idToken;
+        const { email } = await fetchUserAttributes();
+        const response = await fetch(
+          `${import.meta.env.VITE_API_ENDPOINT}instructor/groups?email=${encodeURIComponent(email)}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: token,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const currentGroup = data.find(g => g.simulation_group_id === simulationGroupId);
+          if (currentGroup) {
+            setGroupName(currentGroup.group_name);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching group name:", error);
       }
+    };
+
+    if (simulationGroupId) {
+      fetchGroupName();
     }
-  }, []);
+  }, [simulationGroupId]);
+
 
   if (!simulationGroupId) {
     return <Typography variant="h6">Loading ...</Typography>;
@@ -161,8 +185,7 @@ const InstructorHomepage = () => {
         var token = session.tokens.idToken;
         const { email } = await fetchUserAttributes();
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }instructor/groups?email=${encodeURIComponent(email)}`,
           {
             method: "GET",
@@ -213,17 +236,8 @@ const InstructorHomepage = () => {
 
   const handleRowClick = (groupName, simulation_group_id) => {
     localStorage.setItem("selectedGroupId", simulation_group_id);
-    const group = groupData.find(
-      (group) => group.group_name.trim() === groupName.trim()
-    );
-
-    if (group) {
-      const { simulation_group_id } = group;
-      const path = `/group/ ${groupName.trim()}`;
-      navigate(path, { state: { simulation_group_id } });
-    } else {
-      console.error("Group not found!");
-    }
+    const path = `/group/${simulation_group_id}`;
+    navigate(path, { state: { simulation_group_id } });
   };
 
   return (
@@ -437,12 +451,12 @@ const InstructorHomepage = () => {
                           sx={{
                             ".MuiTablePagination-toolbar": { px: 0 },
                             ".MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows":
-                              {
-                                fontSize: ".65rem",
-                                letterSpacing: ".05em",
-                                textTransform: "uppercase",
-                                color: "#6b7280",
-                              },
+                            {
+                              fontSize: ".65rem",
+                              letterSpacing: ".05em",
+                              textTransform: "uppercase",
+                              color: "#6b7280",
+                            },
                           }}
                         />
                       </TableRow>
@@ -454,14 +468,14 @@ const InstructorHomepage = () => {
           </PageContainer>
         }
       />
-      <Route exact path=":groupName/*" element={<GroupDetails />} />
+      <Route exact path=":simulationGroupId/*" element={<GroupDetails />} />
       <Route
-        path=":groupName/edit-patient"
+        path=":simulationGroupId/edit-patient"
         element={<InstructorEditPatients />}
       />
-      <Route path=":groupName/new-patient" element={<InstructorNewPatient />} />
+      <Route path=":simulationGroupId/new-patient" element={<InstructorNewPatient />} />
       <Route
-        path=":groupName/student/:studentId"
+        path=":simulationGroupId/student/:studentId"
         element={<StudentDetails />}
       />
     </Routes>

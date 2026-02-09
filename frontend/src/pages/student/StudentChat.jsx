@@ -1297,7 +1297,27 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   useEffect(() => {
     if (session) {
       setCurrentSessionId(session.session_id);
-      getMessages();
+      getMessages().then(() => {
+        // apply filters again once messages are loaded
+        setMessages(prevMessages =>
+          prevMessages.filter(message => {
+            const content = message.message_content || "";
+            const trimmedContent = content.trim();
+
+            // filtering out the voice transcript messages
+            if (trimmedContent.includes("[VOICE_TRANSCRIPT]")) {
+              return false;
+            }
+
+            // filtering out any messages prefixed with Assistant: or User:
+            if (trimmedContent.startsWith("Assistant:") || trimmedContent.startsWith("User:")) {
+              return false;
+            }
+
+            return true;
+          })
+        );
+      });
     }
   }, [session]);
 

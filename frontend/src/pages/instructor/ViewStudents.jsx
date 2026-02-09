@@ -55,8 +55,7 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
         const session = await fetchAuthSession();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }instructor/get_access_code?simulation_group_id=${encodeURIComponent(
             simulation_group_id
           )}`,
@@ -85,8 +84,7 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
         const session = await fetchAuthSession();
         const token = session.tokens.idToken;
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }instructor/view_students?simulation_group_id=${encodeURIComponent(
             simulation_group_id
           )}`,
@@ -124,8 +122,7 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
       const session = await fetchAuthSession();
       var token = session.tokens.idToken;
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }instructor/generate_access_code?simulation_group_id=${encodeURIComponent(
           simulation_group_id
         )}`,
@@ -175,7 +172,7 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
   const handleRowClick = (student) => {
     localStorage.setItem("selectedStudent", JSON.stringify(student));
     localStorage.setItem("selectedGroupId", simulation_group_id);
-    navigate(`/group/${groupName}/student/${student.name}`, {
+    navigate(`/group/${simulation_group_id}/student/${student.name}`, {
       state: { simulation_group_id, student },
     });
   };
@@ -307,12 +304,12 @@ export const ViewStudents = ({ groupName, simulation_group_id }) => {
                   sx={{
                     ".MuiTablePagination-toolbar": { px: 0 },
                     ".MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows":
-                      {
-                        fontSize: "0.75rem",
-                        letterSpacing: ".05em",
-                        textTransform: "uppercase",
-                        color: "#6b7280",
-                      },
+                    {
+                      fontSize: "0.75rem",
+                      letterSpacing: ".05em",
+                      textTransform: "uppercase",
+                      color: "#6b7280",
+                    },
                   }}
                 />
               </TableRow>
