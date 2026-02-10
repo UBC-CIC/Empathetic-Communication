@@ -643,20 +643,20 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
 
             # Mirror to PostgreSQL
             try:
-                #normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
+                normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
                 #langchain_chat_history.add_message(self.session_id, normalized_role, text)
                 
                 # Save ALL messages to messages table (both USER and ASSISTANT)
                 if self.role and self.role.upper() == "ASSISTANT":
                     print(f"💾 SAVING ASSISTANT MESSAGE TO DB: {text[:50]}...", flush=True)
                     self._save_message_to_db(self.session_id, False, text, None)
-                """
+                
                 elif self.role and self.role.upper() == "USER":
                     print(f"💾 SAVING USER MESSAGE TO DB (BACKUP): {text[:50]}...", flush=True)
                     # Backup save in case async save fails
                     self._save_message_to_db(self.session_id, True, text, None)
                     
-                logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")"""
+                logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")
             except Exception as e:
                 print(f"❌ Failed to insert message into PostgreSQL: {e}", flush=True)
 

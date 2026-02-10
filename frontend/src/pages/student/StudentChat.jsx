@@ -330,6 +330,23 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
+
+  const normalizeVoiceLine = (rawText) => {
+    const text = (rawText ?? "").trim();
+    if (!text) return null;
+
+    if (text.startsWith("[VOICE_TRANSCRIPT]")) return null;
+
+    if (text.startsWith("User:")) {
+      return { student_sent: true, message_content: text.replace(/^User:\s*/, "").trim() };
+    }
+    if (text.startsWith("Assistant:")) {
+      return { student_sent: false, message_content: text.replace(/^Assistant:\s*/, "").trim() };
+    }
+    // No change to student_sent if no prefix found
+    return { message_content: text };
+  };
+
   useEffect(() => {
     const setupSocketListeners = async () => {
       const socket = await getSocket();
@@ -343,24 +360,18 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       const handleTextMessage = (data) => {
         // ADD MESSAGE TO CHAT UI
         console.log("Voice text message received:", data.text);
-        if (data.text && data.text.trim()) {
 
-          // Filtering out voice transcripts and role-prefixed messages
-          if (data.text.startsWith("[VOICE_TRANSCRIPT]") ||
-            data.text.trim().startsWith("Assistant:") ||
-            data.text.trim().startsWith("User:")) {
-            console.log("Filtered out voice transcript or role-prefixed message", data.text.substring(0, 30));
-            return;
-          }
+        const normalized = normalizeVoiceLine(data.text);
+        if (!normalized) return;
 
-          const newMsg = {
-            message_id: `voice_${Date.now()}`,
-            student_sent: false,
-            message_content: data.text,
-            time_sent: new Date().toISOString()
-          };
-          setMessages(prev => [...prev, newMsg]);
-        }
+        const newMsg = {
+          message_id: `voice_${Date.now()}`,
+          student_sent: normalized.hasOwnProperty('student_sent') ? normalized.student_sent : false,
+          message_content: normalized.message_content,
+          time_sent: new Date().toISOString()
+        };
+
+        setMessages(prev => [...prev, newMsg]);
       };
 
       const handleEmpathyFeedback = (data) => {
@@ -1250,33 +1261,40 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           }
 
           // Filtering out the final voice transcript message
-          if (message.message_content.trim().includes("[VOICE_TRANSCRIPT]")) {
+          if (message.message_content.trim().startsWith("[VOICE_TRANSCRIPT]")) {
             console.log("Filtered out the final voice transcript message");
             return;
           }
 
-          // Filtering out any messages prefixed with Assistant: or User:
-          if (message.message_content.trim().startsWith("Assistant:") || message.message_content.trim().startsWith("User:")) {
-            console.log("Filtered out the message prefixed with Assistant: or User:");
-            return;
-          }
+          let normalizedMsg = { ...message };
+          const n = normalizeVoiceLine(normalizedMsg.message_content);
 
-          // Create a unique key combining content and sender type
-          const contentKey = `${message.student_sent ? "student" : "ai"
-            }-${message.message_content.trim()}`;
+          // If it's the transcript block - normalizeVoiceLine() returns null, but we already filtered that.
+          // but for a safeguard:
+          if (!n) return;
+
+          // If it was role prefixed, strip prefix and force the correct sender
+          normalizedMsg.message_content = n.message_content;
+          normalizedMsg.student_sent = n.hasOwnProperty("student_sent")
+            ? n.student_sent
+            : message.student_sent;
+
+          // Now, use normalizedMsg for deduplication + pushing
+          const contentKey = `${normalizedMsg.student_sent ? "student" : "ai"
+            }-${normalizedMsg.message_content.trim()}`;
 
           // Check for duplicates by ID or content
           if (
-            !messageIds.has(message.message_id) &&
+            !messageIds.has(normalizedMsg.message_id) &&
             !messageContentMap.has(contentKey)
           ) {
-            messageIds.add(message.message_id);
+            messageIds.add(normalizedMsg.message_id);
             messageContentMap.set(contentKey, true);
-            uniqueMessages.push(message);
+            uniqueMessages.push(normalizedMsg);
           } else {
             console.log(
               "Filtered out duplicate message:",
-              message.message_content.substring(0, 30) + "..."
+              normalizedMsg.message_content.substring(0, 30) + "..."
             );
           }
         });
@@ -1309,11 +1327,6 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
               return false;
             }
 
-            // filtering out any messages prefixed with Assistant: or User:
-            if (trimmedContent.startsWith("Assistant:") || trimmedContent.startsWith("User:")) {
-              return false;
-            }
-
             return true;
           })
         );
@@ -1343,26 +1356,23 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
       return messagesArray;
     }
 
-    return messagesArray.filter(message => {
-      const content = message.message_content || "";
-      const trimmedContent = content.trim();
+    const out = [];
+    for (const m of messagesArray) {
+      const n = normalizeVoiceLine(m?.message_content);
+      if (!n) continue;
 
-      // filtering out the voice transcript messages
-      if (trimmedContent.includes("[VOICE_TRANSCRIPT]")) {
-        return false;
-      }
+      // keep the other filters
+      if ((m.message_content || "").includes("Begin the conversation as the patient")) continue;
 
-      // filtering out any messages prefixed with Assistant: or User:
-      if (trimmedContent.startsWith("Assistant:") || trimmedContent.startsWith("User:")) {
-        return false;
-      }
+      out.push({
+        ...m,
+        student_sent: n.hasOwnProperty('student_sent') ? n.student_sent : m.student_sent,
+        message_content: n.message_content,
+      });
+    }
 
-      if (trimmedContent.includes("Begin the conversation as the patient")) {
-        return false;
-      }
+    return out;
 
-      return true;
-    });
   };
 
   // Filtered setter that always applies the filter
