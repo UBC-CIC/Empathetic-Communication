@@ -1284,7 +1284,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
         console.log(
           `Filtered ${data.length} messages to ${uniqueMessages.length} unique messages`
         );
-        setMessages(uniqueMessages);
+        setFilteredMessages(uniqueMessages);
       } else {
         console.error("Failed to retrieve session:", response.statusText);
         setMessages([]);
@@ -1335,6 +1335,43 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
   const handleConfirmReveal = () => {
     setIsConfirmOpen(false);
     setIsAnswerKeyOpen(true);
+  };
+
+  // Helper function to filter out unwanted messages
+  const filterUnwantedMessages = (messagesArray) => {
+    if (!Array.isArray(messagesArray)) {
+      return messagesArray;
+    }
+
+    return messagesArray.filter(message => {
+      const content = message.message_content || "";
+      const trimmedContent = content.trim();
+
+      // filtering out the voice transcript messages
+      if (trimmedContent.includes("[VOICE_TRANSCRIPT]")) {
+        return false;
+      }
+
+      // filtering out any messages prefixed with Assistant: or User:
+      if (trimmedContent.startsWith("Assistant:") || trimmedContent.startsWith("User:")) {
+        return false;
+      }
+
+      if (trimmedContent.includes("Begin the conversation as the patient")) {
+        return false;
+      }
+
+      return true;
+    });
+  };
+
+  // Filtered setter that always applies the filter
+  const setFilteredMessages = (messagesOrUpdater) => {
+    if (typeof messagesOrUpdater === "function") {
+      setMessages(prevMessages => filterUnwantedMessages(messagesOrUpdater(prevMessages)));
+    } else {
+      setMessages(filterUnwantedMessages(messagesOrUpdater));
+    }
   };
 
   if (!patient) {
@@ -1428,7 +1465,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
                   setSession={setSession}
                   deleteSession={handleDeleteSession}
                   selectedSession={session}
-                  setMessages={setMessages}
+                  setMessages={setFilteredMessages}
                   setSessions={setSessions}
                   sessions={sessions}
                 />
