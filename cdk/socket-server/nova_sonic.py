@@ -68,6 +68,92 @@ class NovaSonic:
         # Adding evaluation sequence tracking to prevent stale overwrites
         self._empathy_eval_sequence = 0
 
+    def _ensure_session_exists(self, session_id):
+        # Ensure that the session exists in the sessions table before saving messages
+        # Creates the session if it doesn't exist (REQUIRES: valid student_interaction_id)
+
+        try:
+            conn = get_pg_connection()
+            cursor = conn.cursor()
+
+            # First, checking if the session already exists
+            cursor.execute("SELECT 1 FROM sessions WHERE session_id = %s", (session_id,))
+            if cursor.fetchone():
+                print(f"Session already exists: {session_id}", flush=True)
+                cursor.close()
+                return_pg_connection(conn)
+                return True
+
+            print(f"Session {session_id} not found, attempting to create...", flush=True)
+            # For logging
+            print(f"patient_id: {self.patient_id}", flush=True)
+            print(f"user_id: {self.user_id}", flush=True)
+            
+            # Now we find the student_interaction_id for this user/patient combination
+            student_interaction_id = None
+            if self.patient_id and self.user_id:
+                cursor.execute("""
+                    SELECT si.student_interaction_id
+                    FROM student_interactions si
+                    JOIN enrolments e ON si.enrolment_id = e.enrolment_id
+                    WHERE si.patient_id = %s AND e.user_id = %s
+                    ORDER BY si.last_accessed DESC NULLS LAST
+                    LIMIT 1
+                """, (self.patient_id, self.user_id))
+
+                result = cursor.fetchone()
+                if result:
+                    student_interaction_id = result[0]
+                    print(f"FOUND student_interaction_id: {student_interaction_id}", flush=True)
+                else:
+                    print(f"No student interaction found!", flush=True)
+                    print("either user isn't enrolled in a group with this patient, user hasn't started interacting or wrong patient or user id", flush=True)
+            
+            else:
+                print("missing patient or user id, can't look up student interaction", flush=True)
+
+            # If we found a student interaction id, we create the session
+            if student_interaction_id:
+                insert_query = """
+                    INSERT INTO sessions (
+                        session_id,
+                        student_interaction_id,
+                        session_name,
+                        last_accessed,
+                        notes
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (session_id) DO NOTHING
+                """
+
+                cursor.execute(insert_query, (
+                    session_id,
+                    student_interaction_id,
+                    f"Voice Session - {self.patient_name or 'Patient'}",
+                    datetime.now(),
+                    None
+                ))
+
+                conn.commit()
+                print(f"Created session: {session_id}", flush=True)
+                logger.info(f"Created session in database: {session_id}")
+                cursor.close()
+                return_pg_connection(conn)
+                return True
+            
+            else:
+                print("Cannot create session, no valid student interaction id found", flush=True)
+                logger.warning(f"Cannot create session {session_id} - no student interaction id")
+                cursor.close()
+                return_pg_connection(conn)
+                return False
+    
+        except Exception as e:
+            logger.error(f"Error ensuring session exists: {e}")
+            print(f"Error ensuring session exists: {e}", flush=True)
+            return False
+
+
     def _init_client(self):
         """Initialize the Bedrock Client for Nova"""
         try:
@@ -208,6 +294,15 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
         """Start a new Nova Sonic session"""
         if not self.client:
             self._init_client()
+
+        # Ensuring the session exists in the database BEFORE any messages are saved
+        print(f"Verifying session exists in database: {self.session_id}", flush=True)
+        session_ok = self._ensure_session_exists(self.session_id)
+
+        if not session_ok:
+            print(f"WARNING: Session NOT in DB - messages will fail to save!", flush=True)
+            print(f"Voice session will continue but data will not be persisted", flush=True)
+            logger.warning(f"Session {self.session_id} not in DB - continuing without persistence")
 
         # Init stream
         self.stream = await self.client.invoke_model_with_bidirectional_stream(
@@ -377,6 +472,13 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
             # Save user message to DB (CRITICAL for empathy coach review)
             print(f"💾 AUDIO END: Saving accumulated user input to DB", flush=True)
             asyncio.create_task(self._save_user_message_async(prefixed_user_input))
+
+            # ALSO saving to langchain chat history WITH prefix
+            try:
+                langchain_chat_history.add_message(self.session_id, "user", prefixed_user_input)
+                logger.info(f"LANGCHAIN USER (prefixed) | {self.session_id} | {captured_user_input[:30]}...")
+            except Exception as e:
+                print(f"Failed to save to Langchain chat history: {e}", flush=True)
             
             # CRITICAL: Direct empathy evaluation for voice input
             print(f"🧠 AUDIO END: Starting DIRECT empathy evaluation for voice input", flush=True)
@@ -541,19 +643,20 @@ Never provide medical advice, diagnoses, or pharmaceutical recommendations. Alwa
 
             # Mirror to PostgreSQL
             try:
-                normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
-                langchain_chat_history.add_message(self.session_id, normalized_role, text)
+                #normalized_role = "ai" if self.role and self.role.upper() == "ASSISTANT" else "user"
+                #langchain_chat_history.add_message(self.session_id, normalized_role, text)
                 
                 # Save ALL messages to messages table (both USER and ASSISTANT)
                 if self.role and self.role.upper() == "ASSISTANT":
                     print(f"💾 SAVING ASSISTANT MESSAGE TO DB: {text[:50]}...", flush=True)
                     self._save_message_to_db(self.session_id, False, text, None)
+                """
                 elif self.role and self.role.upper() == "USER":
                     print(f"💾 SAVING USER MESSAGE TO DB (BACKUP): {text[:50]}...", flush=True)
                     # Backup save in case async save fails
                     self._save_message_to_db(self.session_id, True, text, None)
                     
-                logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")
+                logger.info(f"💬 [PG INSERT] {normalized_role.upper()} | {self.session_id} | {text[:30]}")"""
             except Exception as e:
                 print(f"❌ Failed to insert message into PostgreSQL: {e}", flush=True)
 
@@ -736,8 +839,8 @@ Provide structured evaluation with detailed justifications for each score.
             loop = asyncio.get_event_loop()
             print(f"💾 ASYNC SAVE: Starting save for user text: {user_text[:50]}...", flush=True)
             await loop.run_in_executor(None, self._save_message_to_db, self.session_id, True, user_text, None)
-            # Also add to chat history
-            await loop.run_in_executor(None, langchain_chat_history.add_message, self.session_id, "user", user_text)
+            # REMOVED: langchain save is now done in end_audio_input() to ensure prefix consistency
+            #await loop.run_in_executor(None, langchain_chat_history.add_message, self.session_id, "user", user_text)
             print(f"✅ ASYNC SAVE COMPLETE: User message saved to DB", flush=True)
             logger.info(f"💾 User audio message saved: {user_text[:30]}...")
         except Exception as e:
