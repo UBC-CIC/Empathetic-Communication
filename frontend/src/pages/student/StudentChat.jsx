@@ -330,30 +330,21 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
     }
   };
 
+
   const normalizeVoiceLine = (rawText) => {
     const text = (rawText ?? "").trim();
     if (!text) return null;
 
-    // Only filter the concatenated transcript block
-    if (text.startsWith("[VOICE_TRANSCRIPT")) return null;
+    if (text.startsWith("[VOICE_TRANSCRIPT]")) return null;
 
-    // Convert role-prefixed lines into the real chat model
     if (text.startsWith("User:")) {
-      const content = text.replace(/^User:\s*/, "").trim()
-      if (!content) return null;
-
-      return { student_sent: true, message_content: content };
+      return { student_sent: true, message_content: text.replace(/^User:\s*/, "").trim() };
     }
-
     if (text.startsWith("Assistant:")) {
-      const content = text.replace(/^Assistant:\s*/, "").trim()
-      if (!content) return null;
-
-      return { student_sent: false, message_content: content };
+      return { student_sent: false, message_content: text.replace(/^Assistant:\s*/, "").trim() };
     }
-
-    // if backend sometimes emits plain patient text without prefix
-    return { student_sent: false, message_content: text };
+    // No change to student_sent if no prefix found
+    return { message_content: text };
   };
 
   useEffect(() => {
@@ -375,7 +366,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
         const newMsg = {
           message_id: `voice_${Date.now()}`,
-          student_sent: normalized.student_sent,
+          student_sent: normalized.hasOwnProperty('student_sent') ? normalized.student_sent : false,
           message_content: normalized.message_content,
           time_sent: new Date().toISOString()
         };
@@ -1270,7 +1261,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
           }
 
           // Filtering out the final voice transcript message
-          if (message.message_content.trim().includes("[VOICE_TRANSCRIPT]")) {
+          if (message.message_content.trim().startsWith("[VOICE_TRANSCRIPT]")) {
             console.log("Filtered out the final voice transcript message");
             return;
           }
@@ -1284,7 +1275,9 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
           // If it was role prefixed, strip prefix and force the correct sender
           normalizedMsg.message_content = n.message_content;
-          normalizedMsg.student_sent = n.student_sent;
+          normalizedMsg.student_sent = n.hasOwnProperty("student_sent")
+            ? n.student_sent
+            : message.student_sent;
 
           // Now, use normalizedMsg for deduplication + pushing
           const contentKey = `${normalizedMsg.student_sent ? "student" : "ai"
@@ -1373,7 +1366,7 @@ const StudentChat = ({ group, patient, setPatient, setGroup }) => {
 
       out.push({
         ...m,
-        student_sent: n.student_sent,
+        student_sent: n.hasOwnProperty('student_sent') ? n.student_sent : m.student_sent,
         message_content: n.message_content,
       });
     }
