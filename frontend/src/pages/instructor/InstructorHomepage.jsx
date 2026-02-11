@@ -148,6 +148,7 @@ const GroupDetails = () => {
         <InstructorSidebar
           setSelectedComponent={setSelectedComponent}
           activeExternal={selectedComponent}
+          simulation_group_id={simulationGroupId}
         />
         {renderComponent()}
       </PageContainer>

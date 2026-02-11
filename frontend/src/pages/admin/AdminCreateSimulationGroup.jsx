@@ -64,7 +64,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
     const value = e.target.value;
     if (/^\d*$/.test(value)) {
       // This regex ensures only digits
-      setSimulationGroupCode(value); 
+      setSimulationGroupCode(value);
     }
   };
   useEffect(() => {
@@ -74,8 +74,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
         var token = session.tokens.idToken
         //replace if analytics for admin actions is needed
         const response = await fetch(
-          `${
-            import.meta.env.VITE_API_ENDPOINT
+          `${import.meta.env.VITE_API_ENDPOINT
           }admin/instructors?instructor_email=replace`,
           {
             method: "GET",
@@ -99,6 +98,26 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
     fetchInstructors();
   }, []);
   const handleCreate = async () => {
+    // Validation
+    if (!simulationGroupName.trim()) {
+      toast.error("Group Name is required", {
+        position: "top-center",
+        autoClose: 2000,
+        theme: "colored",
+      });
+      setSubmitting(false);
+      return;
+    }
+    if (!groupDescription.trim()) {
+      toast.error("Group Description is required", {
+        position: "top-center",
+        autoClose: 2000,
+        theme: "colored",
+      });
+      setSubmitting(false);
+      return;
+    }
+
     const access_code = generateAccessCode();
     // Handle the create simulationGroup logic here
     try {
@@ -106,8 +125,7 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
       const token = session.tokens.idToken
 
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_ENDPOINT
+        `${import.meta.env.VITE_API_ENDPOINT
         }admin/create_simulation_group?group_name=${encodeURIComponent(
           simulationGroupName
         )}&group_description=${encodeURIComponent(
@@ -129,12 +147,11 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
 
       if (response.ok) {
         const data = await response.json();
-        const { simulation_group_id } = data;   
-        console.log('selectedInstructors',selectedInstructors)     
+        const { simulation_group_id } = data;
+        console.log('selectedInstructors', selectedInstructors)
         const enrollPromises = selectedInstructors.map((instructor) =>
           fetch(
-            `${
-              import.meta.env.VITE_API_ENDPOINT
+            `${import.meta.env.VITE_API_ENDPOINT
             }admin/enroll_instructor?simulation_group_id=${encodeURIComponent(
               simulation_group_id
             )}&instructor_email=${encodeURIComponent(instructor.email)}`,
@@ -202,10 +219,12 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           });
         }
       } else {
-        console.error("Failed to create simulation group:", response.statusText);
-        toast.error("Simulation Group Creation Failed", {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || response.statusText || "Unknown error";
+        console.error("Failed to create simulation group:", errorMessage);
+        toast.error(`Creation Failed: ${errorMessage}`, {
           position: "top-center",
-          autoClose: 1000,
+          autoClose: 3000,
           hideProgressBar: false,
           closeOnClick: true,
           pauseOnHover: true,
@@ -216,9 +235,9 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
       }
     } catch (error) {
       console.error("Error creating simulation group:", error);
-      toast.error("Simulation Group Creation Failed", {
+      toast.error(`Creation Failed: ${error.message || "Network error"}`, {
         position: "top-center",
-        autoClose: 1000,
+        autoClose: 3000,
         hideProgressBar: false,
         closeOnClick: true,
         pauseOnHover: true,
@@ -275,6 +294,17 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
             margin="normal"
             backgroundColor="default"
             inputProps={{ maxLength: 50 }}
+            required
+          />
+          <TextField
+            fullWidth
+            label="Group Description"
+            value={groupDescription}
+            onChange={(e) => setGroupDescription(e.target.value)}
+            margin="normal"
+            backgroundColor="default"
+            inputProps={{ maxLength: 100 }}
+            required
           />
           <TextField
             fullWidth
@@ -286,15 +316,6 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
             rows={4}
             inputProps={{ maxLength: 1000 }}
             helperText={`${simulationGroupPrompt.length}/${CHARACTER_LIMIT}`}
-          />
-          <TextField
-            fullWidth
-            label="Group Description"
-            value={groupDescription}
-            onChange={(e) => setGroupDescription(e.target.value)}
-            margin="normal"
-            backgroundColor="default"
-            inputProps={{ maxLength: 100 }}
           />
           <FormControl fullWidth sx={{ marginBottom: 2, marginTop: 2 }}>
             <Autocomplete
@@ -348,9 +369,9 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           />
           <FormControlLabel
             control={
-              <Switch 
-                checked={empathyEnabled} 
-                onChange={(e) => setEmpathyEnabled(e.target.checked)} 
+              <Switch
+                checked={empathyEnabled}
+                onChange={(e) => setEmpathyEnabled(e.target.checked)}
               />
             }
             label="Enable empathy coach"
@@ -362,9 +383,9 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           />
           <FormControlLabel
             control={
-              <Switch 
-                checked={adminVoiceEnabled} 
-                onChange={(e) => setAdminVoiceEnabled(e.target.checked)} 
+              <Switch
+                checked={adminVoiceEnabled}
+                onChange={(e) => setAdminVoiceEnabled(e.target.checked)}
               />
             }
             label="Enable voice (Admin control)"
@@ -376,8 +397,8 @@ export const AdminCreateSimulationGroup = ({ setSelectedComponent }) => {
           />
           <FormControlLabel
             control={
-              <Switch 
-                checked={instructorVoiceEnabled && adminVoiceEnabled} 
+              <Switch
+                checked={instructorVoiceEnabled && adminVoiceEnabled}
                 onChange={(e) => setInstructorVoiceEnabled(e.target.checked)}
                 disabled={!adminVoiceEnabled}
               />
