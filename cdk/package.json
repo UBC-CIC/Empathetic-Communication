@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@aws-cdk/aws-amplify-alpha": "^2.146.0-alpha.0",
-    "aws-cdk-lib": "^2.146.0",
+    "aws-cdk-lib": "^2.240.0",
     "constructs": "^10.0.0",
     "poetry": "^0.6.29",
     "semver": "^7.5.2",
